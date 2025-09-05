@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load custom_tags %}
+
+{% block content %}
+
+<h2>Row Details</h2>
+
+<div class="d-flex justify-content-end mb-2">
+    <button id="saveChangesBtn" class="btn btn-success">
+        {% if row %}💾 Save Changes{% else %} Add Item {% endif %}
+    </button>
+</div>
+
+<table class="table table-bordered">
+    <tbody>
+        {% for col in columns %}
+        <tr>
+            <td style="width:8%">{{forloop.counter}}</td>
+            <th style="width:30%">{{ col }}</th>
+            <td contenteditable="true" data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<a href="javascript:history.back()" class="btn btn-secondary">Back</a>
+
+
+<script>
+document.addEventListener("DOMContentLoaded",function(){
+
+    document.getElementById('saveChangesBtn').addEventListener('click', function() {
+        const rows = document.querySelectorAll('tbody tr');
+        let updatedData = [];
+        const rowId = "{{ row_id|default_if_none:'-1' }}";
+
+        let rowData = { id: rowId };
+
+        rows.forEach(row => {
+            
+            row.querySelectorAll('td[data-field]').forEach(cell => {
+                const field = cell.getAttribute('data-field');
+                const value = cell.innerText.trim();
+                rowData[field] = value;
+            });
+            
+        });
+
+        updatedData.push(rowData);
+
+        // Send AJAX POST to Django
+        fetch("{% url 'update_table_data' table_name=table_name %}", {
+
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ rows: updatedData })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Data updated successfully!');
+            } else {
+                alert('❌ Error updating data.');
+            }
+        });
+    });
+
+});
+</script>
+
+{% endblock %}

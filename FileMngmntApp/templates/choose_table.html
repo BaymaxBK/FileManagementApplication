@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% load custom_tags %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Upload Excel for Admin-Created Table</h2>
+
+    <form method="POST" enctype="multipart/form-data" class="mb-4">
+        
+        {% csrf_token %}
+        <div class="mb-3">
+            <label class="form-label">Select Table</label>
+            <select id="table_selectionId" name="table_id" class="form-select" required>
+                <option value="">-- Choose Table --</option>
+                {% for table in tables %}
+                    <option value="{{ table.id }}" {% if selected_table and selected_table.id == table.id %}selected{% endif %}>
+                        {{ table.display_name }} ({{ table.table_name }})
+                    </option>
+                {% endfor %}
+            </select>
+            <div id="tableFields" class="alert alert-success mt-3"></div>            
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Upload Excel File</label>
+            <input id="file_uploade_id" type="file" name="excel_file" accept=".xlsx" class="form-control" required>
+            <label class="form-label">Select Sheet</label>
+            <select id="SheetDropDown_id" name="sheet_name" class="form-select" disabled>
+                <option value="" >
+                    -- Select Sheet --
+                </option>
+                {% for sheet in sheets %}
+                    <option  value="{{sheet}}" {% if selected_sheet and selected_sheet == sheet %}selected{% endif %}>
+                            {{sheet}} 
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Upload & Preview</button>
+    </form>
+
+    {% if headers %}
+        <div class="card mb-3">
+            <div class="card-header">Detected Headers</div>
+            <div class="card-body">
+                <p><strong>Excel Headers:</strong> {{ headers|join:", " }}</p>
+
+                {% if missing_headers %}
+                    <div class="alert alert-danger">
+                        ❌ Missing required headers: {{ missing_headers|join:", " }}
+                    </div>
+                {% endif %}
+
+                {% if extra_headers %}
+                    <div class="alert alert-warning">
+                        ⚠ Extra headers in Excel (will be ignored): {{ extra_headers|join:", " }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
+    {% if preview_rows %}
+        <h4>Preview First 5 Rows</h4>
+        <div class="table-responsive mb-3">
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        {% for h in headers %}
+                            <th>{{ h }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_rows %}
+                        <tr>
+                            {% for cell in row %}
+                                <td>{{ cell|format_date_auto }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if not missing_headers %}
+            <form method="POST" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="table_id" value="{{ selected_table.id }}">
+                <input type="hidden" name="confirm_insert" value="1">
+                <input type="hidden" name="excel_file" value="{{ request.FILES.excel_file }}">
+                <button type="submit" class="btn btn-success">Confirm & Insert</button>
+            </form>
+        {% endif %}
+    {% endif %}
+
+    {% if rows_inserted %}
+        <div class="alert alert-success mt-3">
+            ✅ {{ rows_inserted }} rows inserted into "{{ selected_table.table_name }}".
+        </div>
+    {% endif %}
+</div>
+<script>
+
+document.addEventListener('DOMContentLoaded',function(){
+    
+    //FETCH THE ADMIN-CRATED TABLE USING AJAX
+    document.getElementById("table_selectionId").addEventListener('change',function(){
+
+        DropdownValue=this.value;
+        if (DropdownValue){
+
+            fetch(`/get_table_fields/${DropdownValue}/`)
+            .then(response => response.json())
+            .then( data => { 
+                
+                let container = document.getElementById('tableFields');
+                container.innerHTML = '';
+                
+                console.log(`Lenth ${data.fields.length}`);
+                if (data.fields.length > 0){
+                    let list = document.createElement('ol');
+
+                    data.fields.forEach(element => {
+                        let item = document.createElement('li');
+                        item.textContent = element;
+                        list.appendChild(item); 
+                    });
+                    container.appendChild(list);
+                }
+
+            })
+            .catch(error => confirm(`Error ${error}`));
+
+        }
+
+    });
+
+    // AJAX CALL FOR AFTER UPLOAD THE FILE
+    document.getElementById('file_uploade_id').addEventListener('change',function(){
+
+            let file=this.files[0];
+        
+            if (!file){
+                return
+            }
+
+            let formdata= new FormData();
+
+            formdata.append('excel_file',file);
+
+            fetch("/get_sheet_names/",{
+
+                    method: 'POST',
+                    body: formdata,
+                    headers:{
+                        "X-CSRFToken": getCookie("csrftoken") // For Django CSRF protection
+                    }
+            })
+            .then( response => response.json() )
+            .then( data => {
+                    console.log("Data From url :"+data);
+                    let sheetDropdown=document.getElementById("SheetDropDown_id");
+                    sheetDropdown.innerHTML='<option value="">-- Select Sheet --</option>';
+                    if (data.sheet_names) {
+                            data.sheet_names.forEach(sheet => {
+                                let opt = document.createElement("option");
+                                opt.value = sheet;
+                                opt.textContent = sheet;
+                                sheetDropdown.appendChild(opt);
+                            });
+                        sheetDropdown.disabled = false;
+                    }
+                })
+            .catch(
+                    error => confirm(`Error ${error}`)
+            );
+    
+    function getCookie(name){
+
+        let cookieValue = null;
+        if ( document.cookie && document.cookie != '' ){
+                let cookies=document.cookie.split(";");
+                for (let cookie of cookies) {
+                    cookie = cookie.trim();
+                    if (cookie.startsWith(name + "=")) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+        }
+        console.log("Cookie value :"+cookieValue)
+        return cookieValue; 
+    
+    }
+
+    });
+
+
+});
+
+</script>
+{% endblock %}

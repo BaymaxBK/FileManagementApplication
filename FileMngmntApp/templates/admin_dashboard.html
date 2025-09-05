@@ -1,0 +1,67 @@
+{%extends 'base.html'%}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Staff Admin Panel</a>
+            <div class="d-flex">
+                <span class="navbar-text text-light me-3">
+                    Hello, {{ user.username }}
+                </span>
+                <form action="{% url 'logout' %}" method="post">
+                    {% csrf_token %}    
+                    <button type="input" class="btn btn-danger">Logout</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    
+    
+    <div class="container mt-4">
+        
+        {% block content %}
+        <h2 class="mb-4">Admin Dashboard</h2>
+        <p class="lead">You are logged in as a staff user (non-superuser).</p>
+
+        <div class="row py-4" style="background-color: blueviolet;">
+            
+
+            <div class="col-md-4">
+                <div class="card border-success h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Create New Table</h5>
+                        <p class="card-text">Let staff users define and create a custom table in the database.</p>
+                        <a href="{% url 'create_table' %}" class="btn btn-success">Create Table</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+
+                <div class="card border-primary h-100 d-flex flex-column">
+                    <div class="card-body flex-fill">
+                        <h5 class="card-title">Manage Uploads</h5>
+                        <p class="card-text">Review or delete uploaded files.</p>
+                        <a href="{% url 'view_tables' %}" class="btn btn-primary">View Tables</a>
+                        
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Add more admin sections below if needed -->
+        </div>
+        {% endblock %}
+
+    </div>
+    
+
+</body>
+</html>

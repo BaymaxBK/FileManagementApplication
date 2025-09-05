@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% load custom_tags %}
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Create Custom Table</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+    <div class="container mt-5">
+    {% block content %}
+        <div class="card shadow p-4">
+            <h2 class="mb-4">Create Custom Table</h2>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="table_name" class="form-label">Table Name</label>
+                    <input type="text" id="table_name" name="table_name" class="form-control" required oninput="validateName(this)">
+                    <div class="form-text text-danger py-2 d-none" id="table_name_error">❌ Must start with a letter or underscore and contain only letters, numbers, and underscores.</div>
+                </div>
+
+                <div id="fields">
+                    <div class="row g-3 mb-2 align-items-center field-row">
+                        
+                        <div class="col-md-4">
+                            <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <select name="field_type[]" class="form-select field_type" required>
+                                <option value="">Select Field Type</option>
+                                <option value="VARCHAR(255)">Text</option>
+                                <option value="INTEGER">Number</option>
+                                <option value="DATE">Date</option>
+                                <option value="BOOLEAN">Boolean</option>
+                            </select>
+                        </div>
+                            
+                        <div class="col-md-2 maxLengthField-div" style="display:none;">
+                            <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="mb-3">
+                    <button id="addField-id" type="button" class="btn btn-outline-secondary btn-sm" >+ Add Field</button>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="createBtn">Create Table</button>
+                <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary ms-2">Back to Dashboard</a>
+            </form>
+        </div>
+    {% endblock %}
+    </div>
+
+    <!-- JavaScript to Add Field Inputs -->
+{% block scripts %}
+<script>
+
+    function allowOnlyNumbers(input) {
+        input.value = input.value.replace(/[^0-9]/g, '');
+    }
+
+    // Call this on page load
+    document.addEventListener('DOMContentLoaded',function(){
+
+        const addField_rowBtn=document.getElementById('addField-id');
+        
+
+        function updateCreateButtonState() {
+            const fieldRows = document.querySelectorAll('.field-row');
+            const createBtn = document.getElementById('createBtn');
+            createBtn.disabled = fieldRows.length === 0;
+        }
+   
+        // ADD FIELD ROW BUTTON
+        addField_rowBtn.addEventListener("click",function(){
+            
+            const fieldHTML = `
+                <div class="row g-3 mb-2 align-items-center field-row">
+                    <div class="col-md-4">
+                        <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                        <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <select name="field_type[]" class="form-select field_type" required>
+                            <option value="">Select Field Type</option>
+                            <option value="VARCHAR(255)">Text</option>
+                            <option value="INTEGER">Number</option>
+                            <option value="DATE">Date</option>
+                            <option value="BOOLEAN">Boolean</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2 maxLengthField-div" style="display:none;">
+                            <input type="text"  name="max_length[]" class="form-control maxLengthField" placeholder="Max Size" oninput="allowOnlyNumbers(this)"></intput>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById("fields").insertAdjacentHTML("beforeend", fieldHTML);
+            updateCreateButtonState()
+        });
+        
+        //REMOVE FILED ROW BUTTON 
+        document.addEventListener("click",function(event){
+
+            if(event.target.classList.contains("remove-Field-row")){
+                const fieldRow = event.target.closest('.field-row');
+                console.log(fieldRow)
+                if (fieldRow) {
+                    fieldRow.remove();
+                }
+                updateCreateButtonState();
+            }
+
+        });
+
+        
+        function validateName(input) {
+            const errorEl = input.parentElement.querySelector('.form-text');
+            const value = input.value.trim();
+
+            // Must start with a-z or underscore, and only contain word chars
+            const isValid = /^[a-z_][\w\s]*$/i.test(value);
+            
+            if (!isValid) {
+                errorEl.classList.remove('d-none');
+            } else {
+                errorEl.classList.add('d-none');
+            }
+        }
+
+        document.addEventListener("change", function(event) {
+            
+            if(event.target.classList.contains("field_type")){
+                
+                const field_row=event.target.closest(".field-row");
+                const maxLengthField_div = field_row.querySelector(".maxLengthField-div");
+                const maxLen_input=field_row.querySelector(".maxLengthField");
+                
+                console.log("MaxInput : ",maxLen_input,"this value :",event.target.value)
+                if (event.target.value == "VARCHAR(255)") {
+                    maxLengthField_div.style.display = "block";
+                    maxLen_input.required = true;
+                } else {
+                    maxLengthField_div.style.display = "none";
+                    maxLen_input.required = false;
+                }
+            }
+
+        });
+
+    });
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}    
+</body>
+</html>

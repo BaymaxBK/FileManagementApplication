@@ -1,0 +1,58 @@
+
+{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Profile</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+    
+{% block content%}
+    <h2>Upload Excel for: {{ table.display_name }}</h2>
+
+{% if not preview %}
+    <!-- First step: upload -->
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="table_name" value="{{ table.table_name }}">
+        <div>
+            <label>Excel File:</label>
+            <input type="file" name="excel_file" accept=".xlsx" required>
+        </div>
+        <button type="submit">Upload & Detect Headers</button>
+    </form>
+{% endif %}
+
+{% if preview %}
+    <h3>Detected Headers:</h3>
+    <ul>
+        {% for h in headers %}
+            <li>{{ h }}</li>
+        {% endfor %}
+    </ul>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="table_name" value="{{ table.table_name }}">
+        <input type="hidden" name="confirm_insert" value="1">
+        <button type="submit">Confirm & Insert Data</button>
+    </form>
+{% endif %}
+
+{% if message %}
+    <p style="color:green">{{ message }}</p>
+{% endif %}
+
+{% if error %}
+    <p style="color:red">{{ error }}</p>
+{% endif %}
+
+
+
+{% endblock %}
+
+</body>
+</html>
