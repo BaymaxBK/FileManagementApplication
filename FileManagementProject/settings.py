@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import dj_database_url
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -76,14 +77,19 @@ WSGI_APPLICATION = 'FileManagementProject.wsgi.application'
 
 DATABASES = {
 
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'FileManagementDB',
-        'USER': 'postgres',
-        'PASSWORD': 'Babubk2000',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.postgresql',
+    #     'NAME': 'FileManagementDB',
+    #     'USER': 'postgres',
+    #     'PASSWORD': 'Babubk2000',
+    #     'HOST': 'localhost',
+    #     'PORT': '5432',
+    # }
+
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL')
+    )
+
 }
 
 
