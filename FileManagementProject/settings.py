@@ -17,6 +17,16 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Static files (CSS, JS, Images)
+STATIC_URL = "/static/"
+
+# This tells Django where to put collected static files
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+# (Optional) where you keep your own static files before collectstatic
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, "static"),
+]
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -92,6 +102,8 @@ DATABASES = {
 
 }
 
+db_from_env = dj_database_url.config(default=None)
+print("Database Env Variable ",db_from_env)
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
