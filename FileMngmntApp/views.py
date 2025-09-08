@@ -453,7 +453,12 @@ def choose_table_and_upload(request):
             
             # Required headers from DB
             required_headers = list(selected_table.fields.values_list('display_name', flat=True))
-            
+            db_sanitized_headers=list(selected_table.fields.values_list('field_name', flat=True))
+
+            # CREATE A LOOK UP
+            header_lookup = dict(zip(required_headers, db_sanitized_headers))
+            print("Header's And there Sanitized Name : ",header_lookup)
+
             # Check missing and extra headers
             missing_headers = [req for req in required_headers if req not in headers]
             
@@ -469,7 +474,7 @@ def choose_table_and_upload(request):
 
             if "confirm_insert" in request.POST and not missing_headers:
                 data_rows = []
-                
+    
                 for row in Active_sheet.iter_rows(min_row=2, values_only=True):
                     # Keep only matching columns
                     filtered_row = [row[headers.index(h)] for h in matching_headers]
@@ -495,9 +500,11 @@ def choose_table_and_upload(request):
                         #             pass  # Ignore if not a valid date
 
                 with connection.cursor() as cursor:
-                                
-                    placeholders = ", ".join(["%s"] * len(matching_headers))
-                    col_names = ", ".join([f'"{col}"' for col in matching_headers])
+                    
+                    sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
+
+                    placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
+                    col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
                     sql = f'INSERT INTO "{selected_table.table_name}" ({col_names}) VALUES ({placeholders})'
                             
                     cursor.executemany(sql, data_rows)
