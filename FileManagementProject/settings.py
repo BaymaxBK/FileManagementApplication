@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import dj_database_url
 import os
+from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -85,6 +87,7 @@ WSGI_APPLICATION = 'FileManagementProject.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+load_dotenv()
 DATABASES = {
 
     # 'default': {
@@ -97,10 +100,12 @@ DATABASES = {
     # }
 
     'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL')
+        default=os.getenv('DATABASE_URL')
     )
 
 }
+
+print("DataBase Connection : ",DATABASES['default'])
 
 db_from_env = dj_database_url.config(default=None)
 print("Database Env Variable ",db_from_env)
