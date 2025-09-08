@@ -452,7 +452,7 @@ def choose_table_and_upload(request):
                        for cell in next(Active_sheet.iter_rows(min_row=1, max_row=1))]
             
             # Required headers from DB
-            required_headers = list(selected_table.fields.values_list('field_name', flat=True))
+            required_headers = list(selected_table.fields.values_list('display_name', flat=True))
             
             # Check missing and extra headers
             missing_headers = [req for req in required_headers if req not in headers]
