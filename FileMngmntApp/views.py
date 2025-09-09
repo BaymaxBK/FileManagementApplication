@@ -421,18 +421,30 @@ def choose_table_and_upload(request):
                 excel_file = request.FILES['excel_file']
                 fs = FileSystemStorage(location=settings.UPLOADS_DIR)
                 filename = fs.save(excel_file.name, excel_file)
+
                 file_path = fs.path(filename)
 
                 # Save file path in session for later use
-                request.session['uploaded_excel_path'] = file_path
+                # request.session['uploaded_excel_path'] = file_path
+                request.session['uploaded_excel_path'] = f"uploads/{filename}"
                 
             else:
                 # No new file uploaded → try to get the saved one
-                file_path = request.session.get('uploaded_excel_path')
-                if not file_path or not os.path.exists(file_path):
+                relative_path = request.session.get('uploaded_excel_path')
+                print("Fetch From Session :(file Path ) ",relative_path)
+
+                
+                if not relative_path:
                     return render(request, 'choose_table.html', {
                         'tables': tables,
                         'error': 'No file uploaded or file missing.'
+                    })
+                
+                file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+                if not os.path.exists(file_path):
+                    return render(request, 'choose_table.html', {
+                            'tables': tables,
+                            'error': 'File missing.'
                     })
                           
             print("Excel file :",file_path)
@@ -499,9 +511,11 @@ def choose_table_and_upload(request):
                         #         except ValueError:
                         #             pass  # Ignore if not a valid date
 
+                print("-------------// Esatablish A connnection After Collecting Excel Data //----------")
                 with connection.cursor() as cursor:
                     
                     sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
+                    print("Sanitized Headder in sql ",sanitized_Matching_headers)
 
                     placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
                     col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
