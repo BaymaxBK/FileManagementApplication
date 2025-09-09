@@ -88,6 +88,8 @@ WSGI_APPLICATION = 'FileManagementProject.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+
+# ---// LOADE THE DOT ENV FILE //----
 load_dotenv()
 DATABASES = {
 
@@ -106,10 +108,10 @@ DATABASES = {
 
 }
 
-print("DataBase Connection : ",DATABASES['default'])
+# print("DataBase Connection : ",DATABASES['default'])
 
-db_from_env = dj_database_url.config(default=None)
-print("Database Env Variable ",db_from_env)
+# db_from_env = dj_database_url.config(default=None)
+# print("Database Env Variable ",db_from_env)
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
