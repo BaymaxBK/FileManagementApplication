@@ -89,6 +89,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="table_id" value="{{ selected_table.id }}">
                 <input type="hidden" name="confirm_insert" value="1">
+                <input type="hidden" name="sheet_name" value="{{request.POST.sheet_name}}">
                 <input type="hidden" name="excel_file" value="{{ request.FILES.excel_file }}">
                 <button type="submit" class="btn btn-success">Confirm & Insert</button>
             </form>
