@@ -21,8 +21,10 @@ urlpatterns = [
     path('update/<str:table_name>/', views.update_table_data, name='update_table_data'),
     
     path('delete_table/<int:table_id>/',views.drop_table,name='drop_table'),
+    path('update-table/<int:table_id>/', views.update_excel_data, name='update_excel_data'),
     path('table_data/view_row_data/<str:table_name>/<str:row_id>/',views.view_row_data,name="view_row_data"),
-    path('delete_data/<str:table_name>/',views.delete_table_row,name="delete_table_row"), 
+    path('delete_data/<str:table_name>/',views.delete_table_row,name="delete_table_row"),
+    path('download_table/<int:table_id>/',views.download_table_as_excel,name="download_table_as_excel"), 
     
     # USER ROUTES
     path('user_profile/',views.user_profile,name="user_profile"),

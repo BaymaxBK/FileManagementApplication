@@ -17,7 +17,7 @@
         <tr>
             <td style="width:8%">{{forloop.counter}}</td>
             <th style="width:30%">{{ col }}</th>
-            <td contenteditable="true" data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td>
+            <td contenteditable={% if col == "id"%} "false" {% else %} "true" {% endif %} data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

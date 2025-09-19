@@ -11,14 +11,14 @@ from FileMngmntApp.models import CustomTable,customFields
 import re
 import os
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
+from django.http import JsonResponse,HttpResponse
 import json
 from datetime import datetime
 from math import ceil
 import openpyxl
 from django.core.files.storage import FileSystemStorage
 import tempfile
-from openpyxl import load_workbook
+from openpyxl import load_workbook,Workbook
 from django.conf import settings
 
 
@@ -204,11 +204,147 @@ def drop_table(request,table_id):
 
     return redirect('view_tables')
 
+def download_table_as_excel(request, table_id):
+    
+    # Fetch the custom table definition
+    custom_table = get_object_or_404(CustomTable, id=table_id)
+    sql_fileds=list(custom_table.fields.values_list('field_name',flat=True))
+    display_fileds=list(custom_table.fields.values_list('display_name',flat=True))
+
+    sqlFldAndDisplyFld_lookup=dict(zip(sql_fileds,display_fileds))
+    print("Fields Dict :> ",sqlFldAndDisplyFld_lookup)
+    
+    # Query table data dynamically
+    with connection.cursor() as cursor:
+        cursor.execute(f'SELECT * FROM "{custom_table.table_name}"')
+        rows = cursor.fetchall()
+        col_names_sql = [desc[0] for desc in cursor.description]
+
+    # Create Excel workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = custom_table.table_name
+
+    # Write headers
+    col_names=[sqlFldAndDisplyFld_lookup.get(col_name) if col_name!="id" else "id" for col_name in col_names_sql ]
+
+    print("Final Display Colname ",col_names)
+    ws.append(col_names)
+
+    # Write rows
+    for row in rows:
+        ws.append(row)
+
+    # Build HTTP response
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{custom_table.table_name}.xlsx"'
+
+    wb.save(response)
+    return response
+
+
+def update_excel_data(request, table_id):
+
+    """Update existing table rows using Excel where the first column is 'id'."""
+    custom_table = get_object_or_404(CustomTable, id=table_id)
+
+    if request.method == "POST" and request.FILES.get("update_excel"):
+        excel_file = request.FILES["update_excel"]
+
+        # Save to a temp location
+        fs = FileSystemStorage(location=settings.MEDIA_ROOT)
+        filename = fs.save(excel_file.name, excel_file)
+        file_path = fs.path(filename)
+
+        try:
+            wb = load_workbook(file_path)
+            ws = wb.active  # use first sheet
+
+            sql_fileds=list(custom_table.fields.values_list('field_name',flat=True))
+            display_fileds=list(custom_table.fields.values_list('display_name',flat=True))
+
+            DisplyFldAndsqlFld_lookup=dict(zip(display_fileds,sql_fileds))
+            print("Fields Dict :> ",DisplyFldAndsqlFld_lookup)
+
+            headers = [str(cell.value).strip() for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+            missing_header=[req_col for req_col in ["id"] + display_fileds if req_col not in headers]
+            print("Missing Header :",missing_header)
+
+            if missing_header:
+                messages.error(request, f"The Excel must contain following Columns : {", ".join(missing_header)}")
+                return redirect("view_tables")
+
+            id_idx = [h.lower() for h in headers].index("id")
+
+            # Collect rows as dicts
+            update_rows = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                row_dict = {headers[i]: row[i] for i in range(len(headers))}
+                update_rows.append(row_dict)
+
+            with connection.cursor() as cursor:
+                cursor.execute(f'SELECT id FROM "{custom_table.table_name}"')
+                valid_ids = {row[0] for row in cursor.fetchall()}
+
+            # Build SQL update  
+            invalid_rows=[]
+            with connection.cursor() as cursor:
+
+                for r in update_rows:          
+                    row_id=r[headers[id_idx]]
+                    if row_id not in valid_ids:
+                        invalid_rows.append(r)
+                        continue 
+                        
+                    set_clause = ", ".join([f'"{DisplyFldAndsqlFld_lookup.get(df)}" = %s' for df in display_fileds])
+                    sql = f'UPDATE "{custom_table.table_name}" SET {set_clause} WHERE id = %s'
+                    values = [r[dsply_col] for dsply_col in display_fileds] + [row_id]
+                    cursor.execute(sql, values)
+
+            if invalid_rows:
+                print("Creating New Work BOOk!")
+                InvalidRow_wb = Workbook()
+                InvalidRow_ws = InvalidRow_wb.active
+                InvalidRow_ws.title = "Invalid IDs"
+
+                # Add header row
+                print("Headers :",headers)
+                InvalidRow_ws.append(headers)
+
+                print("Header Were Created !")
+
+                # Add the invalid rows
+                for row in invalid_rows:
+                    print("Row :",row)
+                    row_data=list(row.values())
+                    print("Row Data ",row_data)
+                    InvalidRow_ws.append(row_data)
+
+                # 4️⃣ Create an HTTP response to download the file
+                response = HttpResponse(
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                response["Content-Disposition"] = f'attachment; filename="invalid_ids_{custom_table.table_name}.xlsx"'
+
+                InvalidRow_wb.save(response)
+
+                return response
+
+            messages.success(request, "Table updated successfully.")
+        except Exception as e:
+            messages.error(request, f"Error updating table: {e}")
+        finally:
+            os.remove(file_path)
+
+    return redirect("view_tables")
 
 def view_table_data(request, table_name):
     
     table = get_object_or_404(CustomTable, table_name=table_name)
-    row_limit=int(request.GET.get("limit",10))
+    row_limit=int(request.GET.get("limit",100))
     page_number=int(request.GET.get("page",1))
     
     with connection.cursor() as cursor:
@@ -240,7 +376,7 @@ def view_table_data(request, table_name):
         return JsonResponse({
 
             "rows": rows,
-            "columns": display_columns,
+            "columns": columns,
             'limit':row_limit,
             "total_pages": paginator.num_pages,
             "current_page": page_obj.number,
@@ -250,7 +386,7 @@ def view_table_data(request, table_name):
 
     context = {
         'table': table,
-        'columns': display_columns,
+        'columns': columns,
         'rows': rows,
         'limit':row_limit,
         'page_obj': page_obj,
@@ -367,7 +503,7 @@ def view_row_data(request, table_name, row_id):
     print("Display Column :",display_columns)
     return render(request, "view_row_detail.html",{
         "row": row,
-        "columns": display_columns,
+        "columns": columns,
         "table_name":table_name,
         "row_id":row_id
         })
@@ -450,7 +586,7 @@ def choose_table_and_upload(request):
             print("Excel file :",file_path)
 
             # Load workbook
-            wb = load_workbook(file_path)
+            wb = load_workbook(file_path,read_only=True)
             sheets=list(wb.sheetnames)
 
             Selected_sheet = request.POST.get('sheet_name')
@@ -485,8 +621,17 @@ def choose_table_and_upload(request):
             # Insert if confirmed and no missing headers
 
             if "confirm_insert" in request.POST and not missing_headers:
+        
                 data_rows = []
-    
+                batch_size = 1000
+                
+                sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
+                print("Sanitized Headder in sql ",sanitized_Matching_headers)
+
+                placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
+                col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
+                sql = f'INSERT INTO "{selected_table.table_name}" ({col_names}) VALUES ({placeholders})'
+
                 for row in Active_sheet.iter_rows(min_row=2, values_only=True):
                     # Keep only matching columns
                     filtered_row = [row[headers.index(h)] for h in matching_headers]
@@ -503,28 +648,20 @@ def choose_table_and_upload(request):
                                     except ValueError:
                                         pass
 
-                        # for column, value in row.items():
-                        #     if isinstance(value, str) and "-" in value:
-                        #         try:
-                        #             parsed_date = datetime.strptime(value, "%d-%m-%Y").strftime("%Y-%m-%d")
-                        #             row[column] = parsed_date
-                        #         except ValueError:
-                        #             pass  # Ignore if not a valid date
+                    if len(data_rows)>=batch_size:
+                        with connection.cursor() as cursor:
+                            cursor.executemany(sql, data_rows)
+                        rows_inserted+=len(data_rows)
+                        data_rows=[]
+                        print("NO INSERTED ROW (BATCH ) :",rows_inserted)
 
-                print("-------------// Esatablish A connnection After Collecting Excel Data //----------")
-                with connection.cursor() as cursor:
-                    
-                    sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
-                    print("Sanitized Headder in sql ",sanitized_Matching_headers)
+                # LESS THAN BATCH LIMIT OF DATA 'OR' REMAINING DATA 
+                if data_rows:
+                    with connection.cursor() as cursor:
+                        cursor.executemany(sql, data_rows)
+                    rows_inserted += len(data_rows)
 
-                    placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
-                    col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
-                    sql = f'INSERT INTO "{selected_table.table_name}" ({col_names}) VALUES ({placeholders})'
-                            
-                    cursor.executemany(sql, data_rows)
-                    rows_inserted = len(data_rows)
-
-                print(" Rows inserted:", rows_inserted)
+                print("Total Rows inserted:", rows_inserted)
 
     except Exception as e:
         print("Error:", (e))

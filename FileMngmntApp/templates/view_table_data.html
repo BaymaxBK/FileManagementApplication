@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h4 class="mb-3">{{ table.display_name }} <small class="text-muted">({{ table.table_name }})</small></h4>
+    <h4 class="bg-light">{{ table.display_name }} <small class="text-muted">({{ table.table_name }})</small></h4>
 
     {% if rows %}
     <form id="saveChangesForm" method="get">
@@ -30,7 +30,7 @@
                 <thead class="table-light">
                     <tr>
                         <td> </td>
-                        
+
                         {% for col in columns %}
                             <th>
                                 <div class="dropdown">
@@ -54,9 +54,9 @@
                 <tbody>
                     {% for row in rows %}
                         <tr data-row-id="{{ row.id }}">
-                            <td>{{ forloop.counter }}</td>
+                            <td style="color: blue;border:none;">{{ forloop.counter }}</td>
                             {% for col in columns %}
-                                <td contenteditable="true" data-field="{{ col }}" tabindex="-1">{{ row|get_item:col|format_date_auto }}</td>
+                                <td contenteditable={% if col != "id" %} "true" {% else %} "false" {% endif %} data-field="{{ col }}" tabindex="-1">{{ row|get_item:col|format_date_auto }}</td>
                             {% endfor %}
 
                             <td>
@@ -190,6 +190,7 @@
                 tr.setAttribute("data-row-id",row["id"])
 
                 const S_no_TD=document.createElement('td');
+                S_no_TD.style.color="blue";
                 s_num++;
                 S_no_TD.textContent=`${s_num}`;
                 tr.appendChild(S_no_TD)
@@ -197,7 +198,8 @@
                 //here
                 data.columns.forEach(col => {
                     let td = document.createElement("td");
-                    td.setAttribute("contenteditable", "true");
+                    editable=col == "id" ? "false":"true";
+                    td.setAttribute("contenteditable", editable);
                     td.setAttribute("data-field", col);
                     td.setAttribute("tabindex", "-1");
 
