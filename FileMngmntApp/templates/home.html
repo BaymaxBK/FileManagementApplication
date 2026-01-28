@@ -17,7 +17,7 @@
 
             {% if user.is_authenticated %}
                 <p class="lead">👋 Hello Welcome,, {{ user.username }}! You're logged in.</p>
-                <a href="{% url 'admin_dashboard' %}" class="btn btn-success">Go to Dashboard</a>
+                <a href={% if not user.is_staff and not user.is_superuser %} "{% url 'user_profile' %}" {% else %} "{% url 'admin_dashboard' %}" {% endif %} class="btn btn-success">Go to Dashboard</a>
             
             {% else %}
                 <p class="lead">Please login or register to continue.</p>

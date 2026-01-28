@@ -6,7 +6,12 @@ register = template.Library()
 
 @register.filter
 def get_item(dictionary, key):
-    return dictionary.get(key, '')
+   
+    value= dictionary.get(key, '')
+    
+    #'' if value is None else value
+    return  value
+    
 
 @register.filter
 def format_date_auto(value):

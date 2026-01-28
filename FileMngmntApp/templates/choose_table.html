@@ -23,9 +23,9 @@
 
         <div class="mb-3">
             <label class="form-label">Upload Excel File</label>
-            <input id="file_uploade_id" type="file" name="excel_file" accept=".xlsx" class="form-control" required>
+            <input id="file_uploade_id" type="file" name="excel_file" accept=".xlsx" class="form-control mb-3" required>
             <label class="form-label">Select Sheet</label>
-            <select id="SheetDropDown_id" name="sheet_name" class="form-select" disabled>
+            <select id="SheetDropDown_id" name="sheet_name" class="form-select mb-5" disabled>
                 <option value="" >
                     -- Select Sheet --
                 </option>
@@ -41,7 +41,7 @@
     </form>
 
     {% if headers %}
-        <div class="card mb-3">
+        <div class="card mb-5">
             <div class="card-header">Detected Headers</div>
             <div class="card-body">
                 <p><strong>Excel Headers:</strong> {{ headers|join:", " }}</p>
@@ -62,6 +62,29 @@
     {% endif %}
 
     {% if preview_rows %}
+
+        {% if not missing_headers %}
+            <form class="mb-3" method="POST" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="table_id" value="{{ selected_table.id }}">
+                <input type="hidden" name="confirm_insert" value="1">
+                <input type="hidden" name="sheet_name" value="{{request.POST.sheet_name}}">
+                <input type="hidden" name="excel_file" value="{{ request.FILES.excel_file }}">
+                <div class="d-flex justify-content-end align-items-center gap-4 text-nowrap">
+                    <label class="form-label">Select Type</label>      
+                    <select type="hidden" id="InsertionOrUpdationId" name="InsertionOrUpdation_type" class="form-select w-25">
+                        <option value="" >
+                            -- Select Type --
+                        </option>
+                        <option  value="Insert" selected>Insert</option>
+                        <option  value="Update" >Update</option>
+                    </select>
+                    <button type="submit" class="btn btn-success">Confirm & Insert</button>
+                </div>
+            </form>
+        {% endif %}
+
+
         <h4>Preview First 5 Rows</h4>
         <div class="table-responsive mb-3">
             <table class="table table-bordered">
@@ -83,17 +106,6 @@
                 </tbody>
             </table>
         </div>
-
-        {% if not missing_headers %}
-            <form method="POST" enctype="multipart/form-data">
-                {% csrf_token %}
-                <input type="hidden" name="table_id" value="{{ selected_table.id }}">
-                <input type="hidden" name="confirm_insert" value="1">
-                <input type="hidden" name="sheet_name" value="{{request.POST.sheet_name}}">
-                <input type="hidden" name="excel_file" value="{{ request.FILES.excel_file }}">
-                <button type="submit" class="btn btn-success">Confirm & Insert</button>
-            </form>
-        {% endif %}
     {% endif %}
 
     {% if rows_inserted %}

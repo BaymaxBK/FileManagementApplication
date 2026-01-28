@@ -16,15 +16,35 @@
     {% block content %}
         <div class="card shadow p-4">
             <h2 class="mb-4">Create Custom Table</h2>
+            
+            <form method="POST" enctype="multipart/form-data">
 
-            {% if messages %}
+                {% csrf_token %}
+                <div class="mb-3 d-flex align-items-center">
+                    <label class="form-label px-3 text-nowrap mt-2">Choose File Create:</label>
+                    <input id="file_uploade_id" type="file" name="excel_file" accept=".xlsx" class="form-control" required>
+                    <!-- <label class="form-label px-3 text-nowrap">Select Sheet</label>
+                    <select id="SheetDropDown_id" name="sheet_name" class="form-select" disabled>
+                        <option value="" >
+                            -- Select Sheet --
+                        </option>
+                        {% for sheet in sheets %}
+                            <option  value="{{sheet}}" {% if selected_sheet and selected_sheet == sheet %}selected{% endif %}>
+                                    {{sheet}} 
+                            </option>
+                        {% endfor %}
+                    </select> -->
+                </div>
+            </form>
+
+            <!-- {% if messages %}
                 {% for message in messages %}
                     <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 {% endfor %}
-            {% endif %}
+            {% endif %} -->
 
             <form method="post">
                 {% csrf_token %}
@@ -35,7 +55,7 @@
                 </div>
 
                 <div id="fields">
-                    <div class="row g-3 mb-2 align-items-center field-row">
+                    <!-- <div class="row g-2 mb-2 mt-1 align-items-center field-row">
                         
                         <div class="col-md-4">
                             <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
@@ -51,16 +71,43 @@
                                 <option value="BOOLEAN">Boolean</option>
                             </select>
                         </div>
-                            
+                        
+                
                         <div class="col-md-2 maxLengthField-div" style="display:none;">
                             <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
                         </div>
                         
-                        <div class="col-md-2">
+                        <div class="col-md-1">
                             <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm constraintToggle-btn" >⚙️</button>
+                        </div>
+                        
+
+                        <div  class="flex-center flex-warp gap-1 constraint-row" style="display: none;">
+
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[]" value="0"> NOT NULL</label>
+                            </div>
+                            
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[]" style="width:1rem; height:1rem;" value="0"> UNIQUE</label>
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" placeholder="(optional)" class="form-control">
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" placeholder="e.g. age >= 18" class="form-control">
+                            </div>
+                            
+                             <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                            </div>
+
                         </div>
 
-                    </div>
+                    </div> -->
 
                 </div>
 
@@ -94,38 +141,241 @@
             const createBtn = document.getElementById('createBtn');
             createBtn.disabled = fieldRows.length === 0;
         }
+
+        function updateCkFieldIndexes() {
+
+            document.querySelectorAll('#fields .constraint-row').forEach((row, idx) => {
+                
+                console.log(row)
+                row.querySelectorAll('input[name="not_null[]"]').forEach(cb => cb.value = idx);
+                row.querySelectorAll('input[name="unique[]"]').forEach(cb => cb.value = idx);
+                row.querySelectorAll('input[name="composite_pk[]"]').forEach(cb => cb.value = idx);
+            // add others if you want to index them too
+            });
+
+        }
+        // UPDATE INITIAL CREATE BUTTON STATUS
+        updateCreateButtonState();
+
+        // AJAX CALL FOR UPLOAD FILE TO GET COLUMN NAME
+    //     document.getElementById("table_selectionId").addEventListener('change',function(){
+
+    //     DropdownValue=this.value;
+    //     if (DropdownValue){
+
+    //         fetch(`/get_table_fields/${DropdownValue}/`)
+    //         .then(response => response.json())
+    //         .then( data => { 
+                
+    //             let container = document.getElementById('tableFields');
+    //             container.innerHTML = '';
+                
+    //             console.log(`Lenth ${data.fields.length}`);
+    //             if (data.fields.length > 0){
+    //                 let list = document.createElement('ol');
+
+    //                 data.fields.forEach(element => {
+    //                     let item = document.createElement('li');
+    //                     item.textContent = element;
+    //                     list.appendChild(item); 
+    //                 });
+    //                 container.appendChild(list);
+    //             }
+
+    //         })
+    //         .catch(error => confirm(`Error ${error}`));
+
+    //     }
+
+    // });
+
+    // AJAX CALL FOR AFTER UPLOAD THE FILE
+    document.getElementById('file_uploade_id').addEventListener('change',function(){
+
+            let file=this.files[0];
+            if (!file){
+                return
+            }
+
+            let formdata= new FormData();
+
+            formdata.append('excel_file',file);
+
+            fetch("/get_sheet_names/",{
+
+                    method: 'POST',
+                    body: formdata,
+                    headers:{
+                        "X-CSRFToken": getCookie("csrftoken") // For Django CSRF protection
+                    }
+            })
+            .then( response => response.json() )
+            .then( data => {
+                    console.log("Data From url :"+data);
+                    data.activeSheet_columns.forEach(col =>{
+                        console.log(col);
+                        const fieldHTML =`<div class="row g-2 mb-2 mt-1 field-row">
+                        
+                        <div class="col-md-4">
+                            <input type="text" name="field_name[]" value="${col}" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <select name="field_type[]" class="form-select field_type" required>
+                                <option value="">Select Field Type</option>
+                                <option value="VARCHAR(255)" selected>Text</option>
+                                <option value="INTEGER">Number</option>
+                                <option value="DATE">Date</option>
+                                <option value="BOOLEAN">Boolean</option>
+                            </select>
+                        </div>
+                        
+                
+                        <div class="col-md-2 maxLengthField-div" style="display:none;">
+                            <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
+                        </div>
+                        
+                        <div class="col-md-2">                            
+                            <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm constraintToggle-btn" >⚙️</button>
+                        </div>
+
+                    
+
+                    <div class="flex-center mb-2 flex-warp gap-1 constraint-row" style="display: none;">
+
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[]" value="0"> NOT NULL</label>
+                            </div>
+                            
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[]" style="width:1rem; height:1rem;" value="0"> UNIQUE</label>
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" placeholder="(optional)" class="form-control">
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" placeholder="e.g. age >= 18" class="form-control">
+                            </div>
+                            
+                             <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                            </div>
+
+                        </div>
+
+                    </div>`;
+
+                    document.getElementById("fields").insertAdjacentHTML("beforeend", fieldHTML);
+                    updateCreateButtonState();
+                    updateCkFieldIndexes();
+                });
+                    // let sheetDropdown=document.getElementById("SheetDropDown_id");
+                    // sheetDropdown.innerHTML='<option value="">-- Select Sheet --</option>';
+                    // if (data.sheet_names) {
+                    //         data.sheet_names.forEach(sheet => {
+                    //             let opt = document.createElement("option");
+                    //             opt.value = sheet;
+                    //             opt.textContent = sheet;
+                    //             sheetDropdown.appendChild(opt);
+                    //         });
+                    //     sheetDropdown.disabled = false;
+                    // }
+                })
+            .catch(
+                    error => confirm(`Error ${error}`)
+            );
+    
+            function getCookie(name){
+            
+                let cookieValue = null;
+                if ( document.cookie && document.cookie != '' ){
+                        let cookies=document.cookie.split(";");
+                        for (let cookie of cookies) {
+                            cookie = cookie.trim();
+                            if (cookie.startsWith(name + "=")) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                }
+                console.log("Cookie value :"+cookieValue)
+                return cookieValue; 
+            
+            }
+
+    });
+        
+
+
+
    
         // ADD FIELD ROW BUTTON
         addField_rowBtn.addEventListener("click",function(){
             
-            const fieldHTML = `
-                <div class="row g-3 mb-2 align-items-center field-row">
-                    <div class="col-md-4">
-                        <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
-                        <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
-                    </div>
+                const fieldHTML =`<div class="row g-2 mb-2 mt-1 field-row">
+                        
+                        <div class="col-md-4">
+                            <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
+                        </div>
 
-                    <div class="col-md-4">
-                        <select name="field_type[]" class="form-select field_type" required>
-                            <option value="">Select Field Type</option>
-                            <option value="VARCHAR(255)">Text</option>
-                            <option value="INTEGER">Number</option>
-                            <option value="DATE">Date</option>
-                            <option value="BOOLEAN">Boolean</option>
-                        </select>
-                    </div>
+                        <div class="col-md-4">
+                            <select name="field_type[]" class="form-select field_type" required>
+                                <option value="">Select Field Type</option>
+                                <option value="VARCHAR(255)">Text</option>
+                                <option value="INTEGER">Number</option>
+                                <option value="DATE">Date</option>
+                                <option value="BOOLEAN">Boolean</option>
+                            </select>
+                        </div>
+                        
+                
+                        <div class="col-md-2 maxLengthField-div" style="display:none;">
+                            <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
+                        </div>
+                        
+                        <div class="col-md-2">                            
+                            <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm constraintToggle-btn" >⚙️</button>
+                        </div>
 
-                    <div class="col-md-2 maxLengthField-div" style="display:none;">
-                            <input type="text"  name="max_length[]" class="form-control maxLengthField" placeholder="Max Size" oninput="allowOnlyNumbers(this)"></intput>
-                    </div>
-                    <div class="col-md-2">
-                        <button type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
-                    </div>
-                </div>
-            `;
+                    
+
+                    <div class="flex-center mb-2 flex-warp gap-1 constraint-row" style="display: none;">
+
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[]" value="0"> NOT NULL</label>
+                            </div>
+                            
+                            <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[]" style="width:1rem; height:1rem;" value="0"> UNIQUE</label>
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" placeholder="(optional)" class="form-control">
+                            </div>
+                            
+                            <div class="w-50 flex-center">
+                                <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" placeholder="e.g. age >= 18" class="form-control">
+                            </div>
+                            
+                             <div class="w-50 d-flex justify-content-start border rounded">
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                            </div>
+
+                        </div>
+
+                    </div>`;
+
+            
 
             document.getElementById("fields").insertAdjacentHTML("beforeend", fieldHTML);
             updateCreateButtonState()
+            updateCkFieldIndexes()
         });
         
         //REMOVE FILED ROW BUTTON 
@@ -138,8 +388,24 @@
                     fieldRow.remove();
                 }
                 updateCreateButtonState();
+                updateCkFieldIndexes();
             }
 
+        });
+        
+
+        document.addEventListener("click", function(event){
+            
+            if(event.target.classList.contains("constraintToggle-btn")){
+                            
+                const fieldRow = event.target.closest(".field-row");
+                const panel = fieldRow.querySelector(".constraint-row");  // find sibling
+                if (panel) {
+                  // toggle visibility
+                  panel.style.display = panel.style.display === "none" || !panel.style.display ? "flex": "none";
+                }
+                
+            }
         });
 
         

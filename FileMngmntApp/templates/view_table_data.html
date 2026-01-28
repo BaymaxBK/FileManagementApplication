@@ -3,12 +3,59 @@
 
 {% block title %} {{ table.display_name }} - Data{% endblock %}
 
+
 {% block content %}
+
+<style>
+    /* Freeze the Action column (last column) */
+    #dataTable th:last-child,
+    #dataTable td:last-child {
+        position: sticky; 
+        right: 0;
+        top:10;              /* stick to the right */
+        z-index: 5;            /* keep above other cells */
+        background: white;     /* avoid overlap transparency */
+        box-shadow: -2px 0 4px rgba(0,0,0,0.1); /* slight shadow for clarity */
+    }
+
+    #dataTable th:first-child,
+    #dataTable td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 6;
+        background: white;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+    }
+</style>
+
 <div class="container mt-4">
+
+    <div class="container mt-3">
+        <div class="row mb-2">
+            
+            <div class="col">
+                <h4>Display Columns</h4>
+            </div>
+
+            <div class="col text-end">
+                <button id="toggleColumnSelector" class="btn btn-secondary btn-sm me-2">Show</button>
+            </div>
+
+            <div id="columnSelectorWrapper" style="display: none;">
+                <div id="columnSelector" class="mb-3"></div>
+                
+                <div class="text-end">
+                    <button id="colSelAplyBtn_Id" class="col btn btn-primary btn-sm">Apply Columns</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <hr>
+
     <h4 class="bg-light">{{ table.display_name }} <small class="text-muted">({{ table.table_name }})</small></h4>
 
     {% if rows %}
-    <form id="saveChangesForm" method="get">
+    <form id="MainForm">
 
         <div class="d-flex justify-content-end align-items-center mb-3">
             <label for="rowLimit" class="form-label px-3">Rows per page:</label>
@@ -21,8 +68,32 @@
                 <option value="500" {% if limit == 500 %}selected{% endif %}>500</option>
                 <option value="1000" {% if limit == 1000 %}selected{% endif %}>1000</option>
                 <option value="2000" {% if limit == 2000 %}selected{% endif %}>2000</option>
+                <option value="5000" {% if limit == 5000 %}selected{% endif %}>5000</option>
+                <option value="10000" {% if limit == 10000 %}selected{% endif %}>10000</option>
+                <option value="50000" {% if limit == 10000 %}selected{% endif %}>50000</option>
+                <option value="100000" {% if limit == 10000 %}selected{% endif %}>100000</option>
+                <option value="all" {% if limit == "all" %}selected{% endif %}>All Records</option>
             </select>
             <button id="addItemBtn" class="btn btn-success add-Item-btn">+ Add Item</button>
+            <button class="btn btn-primary mx-2 AssignTask-btn">Assign Task</button>            
+        </div>
+
+        <!-- TASK FORM -->
+
+        <div id="taskDivId" class="border py-2 rounded flex-center mb-2" style="display:none;">
+            
+                <label for="rowLimit" class="form-label px-3">TaskName</label>
+                <input id="taskName" type="text" class="form-control w-50" >
+                <select id="userSelect" class="form-select w-auto mx-3" >
+
+                    <option value="" selected>- select user -</option>
+                    {% for user in users%}
+                        <option value="{{user.username}}" >{{user.username}}</option>
+                    {% endfor %}
+                    
+                </select>
+                <button id="AssingId" class="btn btn-success">Assign</button>
+                <button id="ShowSelRowBtn" class="btn btn-secondary ms-2">Show</button>            
         </div>
 
         <div class="table-responsive">
@@ -33,20 +104,44 @@
 
                         {% for col in columns %}
                             <th>
+                                
+                                <!-- Filter -->
                                 <div class="dropdown">
                                     <button class="btn btn-sm btn-light dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
                                         {{ col }}
                                     </button>
-                                    <div class="dropdown-menu p-2" style="max-height:200px; overflow:auto;">
+                                    <div class="dropdown-menu p-2" style="max-height:400px; width:auto; overflow:auto;">
+                                        
                                         <input type="text" class="form-control mb-2 filter-search" placeholder="Search {{ col }}">
-                                        <div class="filter-options" data-col="{{ forloop.counter0 }}">
-                                            <!-- checkboxes will be populated by JS -->
+                                        
+                                        <!-- Select All -->
+                                        <div class="form-check mb-2">
+                                            <input type="checkbox" class="form-check-input filter-select-all" data-col="{{ forloop.counter0 }}" checked>
+                                            <label class="form-check-label">Select All</label>
                                         </div>
+                                        
+                
+                                        <div class="filter-options-wrapper" style="max-height:180px; overflow:auto;">
+                                            <div class="filter-options" data-col="{{ forloop.counter0 }}">
+                                                <!-- checkboxes will be populated by JS -->
+                                            </div>
+                                        </div>
+
+                                        <div class="filter-footer mt-2 d-flex justify-content-between border-top pt-2" style="position: sticky; bottom: 0; background: #fff;">
+                                            <button class="btn btn-sm btn-primary filter-ok" data-col="{{ forloop.counter0 }}">OK</button>
+                                            <button class="btn btn-sm btn-secondary filter-clear" data-col="{{ forloop.counter0 }}">Clear</button>
+                                        </div>
+
                                     </div>
                                 </div>
                             </th>
                         {% endfor %}
-                        <th>Action</th>
+                        <th class="flex-center gap-2">Action 
+                            <div class="selectAllDiv" style="display: none;" >
+                                <input type="checkbox" class="d-none">
+                                <button type="button" id="SelectAllId" class="SelectAllcls btn btn-outline-primary btn-sm w-100 text-nowrap"> Select All</button>
+                            </div>
+                        </th>
 
                     </tr>
 
@@ -56,28 +151,33 @@
                         <tr data-row-id="{{ row.id }}">
                             <td style="color: blue;border:none;">{{ forloop.counter }}</td>
                             {% for col in columns %}
-                                <td contenteditable={% if col != "id" %} "true" {% else %} "false" {% endif %} data-field="{{ col }}" tabindex="-1">{{ row|get_item:col|format_date_auto }}</td>
+                                <td class="text-nowrap" contenteditable={% if col != "id" %} "true" {% else %} "false" {% endif %} data-field="{{ col }}" tabindex="-1">{{ row|get_item:col|format_date_auto }}</td>
                             {% endfor %}
 
-                            <td>
+                            <td class="flex-center gap-1">
                                 <button type="button" class="btn btn-danger btn-sm delete-row-btn">Delete</button>
                                 <button type="button" class="btn btn-info btn-sm view-row-btn"> View </button>
+                                <div class="selectDiv" style="display: none;">
+                                    <input type="checkbox" class="row-checkbox d-none" name="selected_rows" value="{{ row.id }}">
+                                    <button type="button" class="btn btn-outline-primary btn-sm select-row-btn"> Select </button>
+                                </div>
                             </td>
 
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
-
-            <nav id="paginationNav">
-                <ul class="pagination">
-                    {% for p in page_obj.paginator.page_range %}
-                        <li class="page-item {% if page_obj.number == p %}active{% endif %}">
-                            <a class="page-link pagination-link" href="?page={{ p }}&limit={{ limit }}">{{ p }}</a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </nav>
+            <div class="navbar-wrapper" style="overflow:auto;">
+                <nav id="paginationNav">
+                    <ul class="pagination">
+                        {% for p in page_obj.paginator.page_range %}
+                            <li class="page-item {% if page_obj.number == p %}active{% endif %}">
+                                <a class="page-link pagination-link" href="?page={{ p }}&limit={{ limit }}">{{ p }}</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </nav>
+            </div>
 
             <!-- <nav aria-label="Page navigation">
                     <ul class="pagination">
@@ -105,9 +205,9 @@
 
         <div class="d-flex gap-2 justify-content-end">
 
-            <button type="button" id="addRowBtn" class="btn btn-success mt-2">Add Row</button>
-            <button type="button" id="saveChangesBtn" class="btn btn-primary mt-2 d-flex ">Save Changes</button>
-
+                <button type="button" id="addRowBtn" class="btn btn-success mt-2">Add Row</button>
+                <button type="button" id="saveChangesBtn" class="btn btn-primary mt-2 d-flex ">Save Changes</button>
+                
         </div>
 
     </form>
@@ -132,6 +232,276 @@
 
     const columns = JSON.parse(document.getElementById('columns-data').textContent);
     console.log("Columns :>>>>>>",columns);
+    const visibleRows = document.querySelectorAll('#dataTable tbody tr:not([style*="display: none"])');
+    console.log("Visible row :",visibleRows)
+
+    let selectedRowIds=[]
+
+
+    //ASSIG TASK BUTTON TOGGLE
+    const AssignTaskBtn = document.querySelector(".AssignTask-btn");
+    const taskDiv = document.getElementById("taskDivId");
+    const Form=document.getElementById("MainForm");
+    const AssignBtn=document.getElementById("AssingId");
+    
+    
+    
+    // SHOW/HIDE Display Column Button
+    $("#toggleColumnSelector").on("click", function () {        
+        const btn = $(this);
+        $("#columnSelectorWrapper").slideToggle(300, function () {
+            if ($(this).is(":visible")) {
+                btn.text("Hide");
+            } else {
+                btn.text("Show");
+            }
+        });
+    });
+
+    
+    // INITIAL LOAD OF ALL COLUMN'S IN DISPLAY COLUMN SELECTION
+    columns.forEach(col => {
+        //console.log("Column :<> ",col)
+        $('#columnSelector').append(`
+            <div class="form-check form-check-inline">
+                <input class="form-check-input column-toggle" type="checkbox" value="${col}" id="chk_${col}" checked>
+                <label class="form-check-label" for="chk_${col}">${col}</label>
+            </div>
+        `);
+    });
+    
+
+    console.log("MainForm : ",Form );
+    console.log("Assign btn :",AssignBtn);
+
+    AssignBtn.addEventListener("click", function(e) {
+            
+            console.log("Works!!!")
+            e.preventDefault(); // Stop normal form submission
+            
+            const taskName = document.getElementById("taskName").value;
+            const assignedUser = document.getElementById("userSelect").value;
+
+            const checkedBoxes = document.querySelectorAll('.selectDiv input.row-checkbox:checked');
+            // Extract their values into an array
+            const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+            console.log("Selected Id's ",selectedIds);
+
+            if(!taskName | !assignedUser){
+                alert("fill both TaskName and Assigned User !")    
+                return
+            }
+            console.log("TaskName ",taskName);
+            console.log("Assigne User :",assignedUser);
+            
+            fetch("{% url 'create_task' %}", { 
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "X-CSRFToken": getCookie("csrftoken") // CSRF token for Django
+                },
+                body: new URLSearchParams({
+                    taskName: taskName,
+                    assignedUser: assignedUser,
+                    rowIds :selectedIds,
+                    tableID :"{{table.id}}"
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                
+                alert(data.message);
+                if (data.success) {
+                    console.log("✅ Task assigned successfully");
+                }
+            })
+            .catch(error => console.error("❌ Error:", error));
+    });
+
+    let showOnlySelected=false;
+    ShowSelRowBtn.addEventListener("click",function(e) {
+        
+        e.preventDefault();     
+        const rows = document.querySelectorAll("#dataTable tbody tr");
+
+            showOnlySelected = !showOnlySelected;  // toggle mode
+            if (showOnlySelected) {
+                // SHOW ONLY SELECTED ROWS
+                rows.forEach(row => {
+                    const checkbox = row.querySelector(".row-checkbox");
+                    row.style.display = (checkbox && checkbox.checked) ? "" : "none";
+                });
+            
+                ShowSelRowBtn.innerText = "Show All";
+            } else {
+                // SHOW ALL ROWS
+                rows.forEach(row => row.style.display = "");
+                ShowSelRowBtn.innerText = "Show Selection";
+            }
+    });
+    
+    
+    document.addEventListener("click", function(e) {
+
+        if (e.target.classList.contains("SelectAllcls")){
+
+            const selectAllBtn=document.getElementById("SelectAllId");
+            console.log("Selelct All Work !!!");
+            e.preventDefault();
+
+            console.log("SelecteAll Textcontent |",selectAllBtn.textContent);
+            console.log(selectAllBtn.textContent.trim() === "Select All");
+            
+            
+            document.querySelectorAll(".select-row-btn").forEach(function (btn) {
+            
+                const row = btn.closest("tr");
+                if (!row || window.getComputedStyle(row).display === "none") {
+                        return; // skip this iteration
+                }
+                
+                const checkbox = row.querySelector(".row-checkbox");
+                
+                if(selectAllBtn.textContent.trim() === "Select All")
+                {   
+                    if(!checkbox.checked)   
+                        checkbox.checked=true
+                }
+                else if(selectAllBtn.textContent.trim() === "Deselect All")
+                {      
+                    if(checkbox.checked)
+                        checkbox.checked=false
+                }
+                // else{
+                //     checkbox.checked=!checkbox.checked;
+                // }
+                
+                
+                // Toggle checkbox state
+                
+
+                // Update button style + text
+                if (checkbox.checked) {
+                  btn.classList.remove("btn-outline-primary");
+                  btn.classList.add("btn-success");
+                  btn.textContent = "Selected";
+                
+                } else {
+                  btn.classList.remove("btn-success");
+                  btn.classList.add("btn-outline-primary");
+                  btn.textContent = "Select";  
+                }
+            
+            });
+
+            if(selectAllBtn.textContent.trim() === "Select All")
+            {      
+                selectAllBtn.classList.add("btn-success");
+                selectAllBtn.classList.remove("btn-outline-primary");
+                selectAllBtn.textContent="Deselect All";
+            }
+            else{
+                selectAllBtn.classList.remove("btn-success");
+                selectAllBtn.classList.add("btn-outline-primary");
+                selectAllBtn.textContent="Select All"
+            }
+
+        }    
+    });
+
+    function getCookie(name){
+            
+                let cookieValue = null;
+                if ( document.cookie && document.cookie != '' ){
+                        let cookies=document.cookie.split(";");
+                        for (let cookie of cookies) {
+                            cookie = cookie.trim();
+                            if (cookie.startsWith(name + "=")) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                }
+                console.log("Cookie value :"+cookieValue)
+                return cookieValue; 
+            
+    }
+
+    function updateSelectButton(){
+
+        const selAlldiv=document.querySelector(".selectAllDiv");
+        console.log("Select all div style: >> ",selAlldiv.style.display)
+
+    
+        if(selAlldiv.style.display==="none"){
+            selAlldiv.style.display="block";
+         }
+         else{
+            selAlldiv.style.display="none";
+         }
+
+        document.querySelectorAll(".selectDiv").forEach(function (div) {
+
+                if(div.style.display==="none"){
+                    div.style.display="block";
+                }
+                else{
+                    div.style.display="none";
+                }
+
+        });
+    }
+
+
+    AssignTaskBtn.addEventListener("click", function(event) {
+
+        event.preventDefault();
+
+        if (taskDiv.style.display === "none") {
+           taskDiv.style.display = "flex";
+           updateSelectButton();
+           //AssignTaskBtn.textContent = "Hide Input";
+           //AssignTaskBtn.classList.remove("btn-outline-primary");
+           //AssignTaskBtn.classList.add("btn-danger");
+         } else {
+           taskDiv.style.display = "none";
+           updateSelectButton();
+           // toggleBtn.textContent = "Show Input";
+           // toggleBtn.classList.remove("btn-danger");
+           // toggleBtn.classList.add("btn-outline-primary");
+         }
+    
+    });
+
+    function attachRowSelectionbtnEvent(){
+        // ADD EVENT FOR SELECT BUTTON 
+        document.querySelectorAll(".select-row-btn").forEach(function (btn) {
+
+            btn.addEventListener("click", function () {
+                const row = btn.closest("tr");
+                const checkbox = row.querySelector(".row-checkbox");
+
+                // Toggle checkbox state
+                checkbox.checked = !checkbox.checked;
+                // Update button style + text
+                if (checkbox.checked) {
+                  btn.classList.remove("btn-outline-primary");
+                  btn.classList.add("btn-success");
+                  btn.textContent = "Selected";
+                } else {
+                  btn.classList.remove("btn-success");
+                  btn.classList.add("btn-outline-primary");
+                  btn.textContent = "Select";
+                }
+            });
+
+        });
+    }
+
+    attachRowSelectionbtnEvent();
+ 
+
+
 
     // ADD EVENT FOR 'ADD ROW' BUTTON
     document.getElementById('addRowBtn').addEventListener('click',function(){
@@ -157,11 +527,16 @@
                 rowElement.appendChild(tableData);
 
             });
+
             const delBtnTD=document.createElement('td');
+            delBtnTD.classList.add("flex-center","gap-1");
             delBtnTD.innerHTML = `<button type="button" class="btn btn-danger btn-sm delete-row-btn">Delete</button>
-            <button type="button" class="btn btn-info btn-sm view-row-btn">
-                View
-            </button>`;
+            <button type="button" class="btn btn-info btn-sm view-row-btn"> View </button>
+            <div class="selectDiv" style="display: none;">
+                <input type="checkbox" class="row-checkbox d-none" name="selected_rows" value="{{ row.id }}">
+                <button type="button" class="btn btn-outline-primary btn-sm select-row-btn"> Select </button>
+            </div>`;
+
             rowElement.appendChild(delBtnTD);
 
             DataTableBody.appendChild(rowElement);
@@ -170,24 +545,107 @@
             
     });
 
-    
+    //GOBAL SELECT BUTTON
+    $(document).on("click", ".select-row-btn", function () {
+        
+        const $container = $(this).closest(".selectDiv");
+        const $checkbox = $container.find(".row-checkbox");
+        const rowId = $checkbox.val();
+
+
+        if ($checkbox.prop("checked")) {
+            // ✅ Select row
+            //$checkbox.prop("checked", true);
+            selectedRowIds.push(rowId);
+            //$(this).text("Selected").removeClass("btn-outline-primary").addClass("btn-primary");
+        } else {
+            // ❌ Unselect row
+            //$checkbox.prop("checked", false);
+            selectedRowIds = selectedRowIds.filter(id => id !== rowId);
+            //$(this).text("Select").removeClass("btn-primary").addClass("btn-outline-primary");
+        }
+
+        console.log("Selected Rows:>>>>>>> ", selectedRowIds.join(","));
+    });
+     
 
     // NO.ROW DROP AJAX REQUEST TO THE DJANGO
     function loadData(url)
-    {
+    {   
+        console.log("URL : ",url);
         fetch(url, {
                     headers: { "X-Requested-With": "XMLHttpRequest" }
                 })
         .then(res => res.json())
         .then(data => {
-        const tbody = document.querySelector("#dataTable tbody");
-        tbody.innerHTML = "";
-        let s_num=0;
+                const tbody = document.querySelector("#dataTable tbody");
+                let tblhead = document.querySelector("#dataTable thead");
+                tblhead.innerHTML=``;
+                 
+                //RE-CREATE THE TABLE HADERS
+                let tableHeaderHtml=`
+                    <tr>
+                        <td> </td>`
+
+                         data.columns.forEach((col,index) =>{ 
+                            let thead_html=`<th>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-light dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
+                                        ${col}
+                                    </button>
+                                    <div class="dropdown-menu p-2" style="max-height:400px; width:auto; overflow:auto;">
+                                        
+                                        <input type="text" class="form-control mb-2 filter-search" placeholder="Search ${col}">
+                                        
+                                        <!-- Select All -->
+                                        <div class="form-check mb-2">
+                                            <input type="checkbox" class="form-check-input filter-select-all" data-col="${index}" checked>
+                                            <label class="form-check-label">Select All</label>
+                                        </div>
+
+                                        <div class="filter-options-wrapper" style="max-height:180px; overflow:auto;">
+                                            <div class="filter-options" data-col="${index}">
+                                                <!-- checkboxes will be populated by JS -->
+                                            </div>
+                                        </div>
+
+                                        <div class="filter-footer mt-2 d-flex justify-content-between border-top pt-2" style="position: sticky; bottom: 0; background: #fff;">
+                                            <button class="btn btn-sm btn-primary filter-ok" data-col="{{ forloop.counter0 }}">OK</button>
+                                            <button class="btn btn-sm btn-secondary filter-clear" data-col="{{ forloop.counter0 }}">Clear</button>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </th>`
+                            tableHeaderHtml +=thead_html;
+                        });
+                        
+                        //SEL SELECT ALL DIV VISIBLE WHEN THE ASSING TASK DIV IS VISIBLE
+                        let selAlldivVisblity=taskDiv.style.display === "flex" ? "flex":"none";
+
+                        //console.log("Task div style |",taskDiv.style.display);
+                        //console.log("selAllvisiblity :|",selAlldivVisblity);
+                        tableHeaderHtml +=`<th class="flex-center gap-2">Action 
+                            <div class="selectAllDiv" style="display: ${selAlldivVisblity};" >
+                                <input type="checkbox" class="d-none">
+                                <button type="button" id="SelectAllId" class="SelectAllcls btn btn-outline-primary btn-sm w-100 text-nowrap "> Select All</button>
+                            </div>
+                        </th>
+
+                    </tr>`;
+                    
+                                                
+                    tblhead.innerHTML=tableHeaderHtml;
+                    
+
+            // RE-CREATE THE TABLE ROW AFTER 'ROW-DROPDOWN' CHANGE
+            tbody.innerHTML = ``;
+            let s_num=0;
             data.rows.forEach(row => {
                 
                 //console.log("Row >> ",row)
                 let tr = document.createElement("tr");
-                tr.setAttribute("data-row-id",row["id"])
+                tr.setAttribute("data-row-id",row["id"]);
 
                 const S_no_TD=document.createElement('td');
                 S_no_TD.style.color="blue";
@@ -207,16 +665,25 @@
                     td.textContent = formatDateAuto(row[col]);
                     tr.appendChild(td);
                 });
+                
+                let selecDiv= taskDiv.style.display != "none" ? "flex" : "none"
+                const isSelected= selectedRowIds.includes(String(row["id"]));
+                console.log(`Row ID ${row["id"]} >> Selected Id Exist: ${isSelected}`)
 
                 const ActionBtnTD=document.createElement('td');
+                ActionBtnTD.classList.add("flex-center","gap-1");
                 ActionBtnTD.innerHTML = `<button type="button" class="btn btn-danger btn-sm delete-row-btn">Delete</button>
-            <button type="button" class="btn btn-info btn-sm view-row-btn">
-                View
-            </button>`;
+            <button type="button" class="btn btn-info btn-sm view-row-btn"> View </button>
+            <div class="selectDiv" style="display:${selecDiv};">
+                <input type="checkbox" class="row-checkbox d-none" name="selected_rows" value="${row["id"]}" ${isSelected ? "checked" : ""}>
+                <button type="button" class="btn ${isSelected ? "btn-success":"btn-outline-primary"} btn-sm select-row-btn"> Select </button>
+            </div>`;
                 tr.appendChild(ActionBtnTD);
 
                 tbody.appendChild(tr);
+                console.log("New Row Feteched !")
             });
+
             // update pagination nav
             let paginationHTML = `<ul class="pagination">`;
             for (let p = 1; p <= data.total_pages; p++) {
@@ -229,16 +696,35 @@
             paginationNav.innerHTML = paginationHTML;
             
             attachPaginationEvents(); // reattach click events
+            attachRowSelectionbtnEvent();
+            buildColumnFilters();
 
+            console.log("SELECTED ROW ID'S AFTER URL > ",selectedRowIds)
         });
     
     }
 
+    document.getElementById("colSelAplyBtn_Id").addEventListener("click", function() {
+    
+        selecteColValues=[...document.querySelectorAll("#columnSelector input:checked")].map(ck => ck.value);
+        let limit= document.getElementById("rowLimit").value;
+        console.log("Limit :>>>",limit);
+
+        const url = `${window.location.pathname}?limit=${limit}&page=1&displayColumn=${selecteColValues}`;
+        console.log("Selected COlumns >>> ",selecteColValues);
+        
+        loadData(url)
+        
+    });
 
     document.getElementById("rowLimit").addEventListener("change", function() {
     
         const limit = this.value;
-        const url = `${window.location.pathname}?limit=${limit}&page=1`;
+
+        selecteColValues=[...document.querySelectorAll("#columnSelector input:checked")].map(ck => ck.value)
+        const url = `${window.location.pathname}?limit=${limit}&page=1&displayColumn=${selecteColValues}`;
+        console.log("Selected COlumns >>> ",selecteColValues);
+        
         loadData(url)
         
     });
@@ -383,6 +869,7 @@ document.addEventListener("click", function(e) {
 function buildColumnFilters() {
     const rows = document.querySelectorAll("#dataTable tbody tr");
     const colCount = document.querySelectorAll("#dataTable thead tr:first-child th").length - 2; // exclude # and Action
+    console.log("COl Cound >",colCount)
 
     for (let c = 0; c <= colCount; c++) {
         const values = new Set();
@@ -390,65 +877,146 @@ function buildColumnFilters() {
             const cell = row.querySelectorAll("td")[c + 1]; // +1 for row number
             if (cell) values.add(cell.innerText.trim());
         });
-        console.log("Unique Row Data : ",values)
+
+        // console.log("Unique Row Data : ",values)
         const container = document.querySelector(`.filter-options[data-col="${c}"]`);
-        container.innerHTML = "";
+        
+        let filterHtml="";
         [...values].sort().forEach(val => {
-            container.innerHTML += `
-                <div>
-                    <input type="checkbox" class="form-check-input filter-checkbox" data-col="${c}" value="${val}" checked>
-                    <label class="form-check-label">${val}</label>
+            filterHtml += `
+                <div class="text-nowrap">
+                    <input type="checkbox" id="${val}"_id class="form-check-input filter-checkbox" data-col="${c}" value="${val}" checked>
+                    <label class="form-check-label" for="${val}"_id >${val}</label>
                 </div>`;
         });
+        container.innerHTML =filterHtml;
     }
 }
 
 // FIND THE UNIQUE VALUE AND BUILD THE COLUMN FILTER TO THE EACH COLUMN
 buildColumnFilters()
+    function applyFilters() {
 
-function applyFilters(){
+        const rows = document.querySelectorAll("#dataTable tbody tr");
 
-    const table_row=document.querySelectorAll("#dataTable tbody tr");
-    table_row.forEach( row =>{
-        let visible=true;
-        document.querySelectorAll(".filter-options").forEach( filterContainter =>{
-            
-            colIndex=parseInt(filterContainter.getAttribute("data-col"));
-            cellValue=row.querySelectorAll("td")[colIndex+1];
-
-            checked_values=[...filterContainter.querySelectorAll(".filter-checkbox:checked")].map(cb => cb.value);
-            if (cellValue && checked_values.length > 0 && !checked_values.includes( cellValue.innerText.trim() ) ){
-                visible=false
-            }
-
+        // 1. Pre-read all filters once (instead of reading inside each row)
+        const filters = [];
+        document.querySelectorAll(".filter-options").forEach(container => {
+            const col = parseInt(container.dataset.col);
+            const selected = new Set(
+                [...container.querySelectorAll(".filter-checkbox:checked")]
+                    .map(cb => cb.value)
+            );
+            filters.push({ col, selected });
         });
-        row.style.display=visible ? "":"none";
 
-    });
+        // 2. Loop rows only once
+        rows.forEach(row => {
+            let visible = true;
+            const cells = row.children; // faster than querySelectorAll
+
+            // 3. Apply all filters quickly
+            for (const f of filters) {
+                if (f.selected.size === 0) continue; // no filter applied for this column
+
+                const cell = cells[f.col + 1]; // +1 due to row number
+                if (!cell) continue;
+
+                const value = cell.textContent.trim();
+
+                if (!f.selected.has(value)) {
+                    visible = false;
+                    break;   // 🚀 stop checking other columns (huge speed boost)
+                }
+            }
+    
+            row.style.display = visible ? "" : "none";
+        });
+    }
 
 
-}
+// function applyFilters(){
+
+//     const table_row=document.querySelectorAll("#dataTable tbody tr");
+//     table_row.forEach( row =>{
+//         let visible=true;
+//         document.querySelectorAll(".filter-options").forEach( filterContainter =>{
+            
+//             colIndex=parseInt(filterContainter.getAttribute("data-col"));
+//             cellValue=row.querySelectorAll("td")[colIndex+1];
+
+//             checked_values=[...filterContainter.querySelectorAll(".filter-checkbox:checked")].map(cb => cb.value);
+//             if (cellValue && checked_values.length > 0 && !checked_values.includes( cellValue.innerText.trim() ) ){
+//                 visible=false
+//             }
+
+//         });
+//         row.style.display=visible ? "":"none";
+        
+//     });
+
+// }
 
 
 // ADD EVENT FOR FILTER 'CHECK BOX'
-document.addEventListener("change", function(e) {
+document.addEventListener("click", function(e) {
     
-    if (e.target.classList.contains("filter-checkbox")) {
+    if (e.target.classList.contains("filter-ok")) {
+        e.preventDefault();
         applyFilters();
     }
 
-});  
+});
+
+// SELECT ALL / UNSELECT ALL
+document.addEventListener("change", function(e) {
+    if (e.target.classList.contains("filter-select-all")) {
+        const col = e.target.dataset.col;
+        const checked = e.target.checked;
+
+        document.querySelectorAll(
+            `.filter-options[data-col="${col}"] .filter-checkbox`
+        ).forEach(cb => cb.checked = checked);
+    }
+});
+
+
+// CLEAR button → uncheck all checkboxes of that column
+document.addEventListener("click", function (e) {
+    if (e.target.classList.contains("filter-clear")) {
+        e.preventDefault();
+        const col = e.target.dataset.col;
+        document.querySelectorAll(`.filter-options[data-col="${col}"] .filter-checkbox`)
+        .forEach(cb => cb.checked = false);
+
+        applyFilters();
+    }
+});
 
 
 // ADD ONLY THE SEARCH TEXT TO THE LISTBOX
 document.addEventListener("input", function(e) {
 
     if (e.target.classList.contains("filter-search")) {
+
         const searchText = e.target.value.toLowerCase();
-        const container = e.target.nextElementSibling;
-        container.querySelectorAll("div").forEach(div => {
+        const container=e.target.closest(".dropdown-menu");
+
+         
+        console.log("Next Element Sibili : > ",container);
+        container.querySelectorAll(".filter-options-wrapper div").forEach(div => {
+            const checkbox = div.querySelector(".filter-checkbox");
+            //console.log("CHEck box :",checkbox);
             const label = div.innerText.toLowerCase();
-            div.style.display = label.includes(searchText) ? "" : "none";
+            console.log("label ",label);
+
+            if(label.includes(searchText)){
+                checkbox.checked=true;
+            }
+            else{
+                checkbox.checked=false;
+            }
+            //div.style.display = label.includes(searchText) ? "" : "none";
         });
     }
 

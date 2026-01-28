@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    #toastContainer .toast {
+      min-width: 320px;
+      max-width: 460px;
+    }
+    #appToastBody {
+      word-break: break-word;
+    }
+
+</style>
+
+<div class="container mt-5">
+
+    <div id="msgBox" class="alert d-none position-fixed top-0 end-0 m-3" style="z-index:9999;"></div>
+
+    <h2 class="text-center mb-4">Assinged Tasks</h2>
+
+    {% if assigned_tasks %}
+        <table class="table table-hover table-bordered text-center align-middle">
+            <thead class="table-primary">
+                <tr>
+                    <th>#</th>
+                    <th>Task Name</th>
+                    <th>Assigned To</th>
+                    <th>Assigned By</th> 
+                    <th>Assigned Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in assigned_tasks %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td>{{ task.TaskNameDisplay }}</td>
+                    <td>{{ task.assigned_to.username }}</td>
+                    <td>{{ task.assigned_by.username }}</td>
+                    <td>{{ task.assigned_at|date:"Y-m-d H:i" }}</td>
+                    <td>                        
+                        {{ task.status }} 
+                    </td>
+
+                    <td >
+                        <!-- <div>
+                            <a href="{% url 'view_taskTable_data' task.id %}" class="btn btn-outline-primary btn-sm mt-2">🔍 View Data</a>
+                        </div> -->
+                        <div class=" mt-2 flex-center gap-2 ">
+                            
+                            <!-- DELETE BUTTON  -->
+                            <form method="post" action="{% url 'drop_tasktable' task.id %}" onsubmit="return confirm('Are you sure you want to delete this table?');">
+                                {% csrf_token %}
+                                <button class="btn btn-outline-danger btn-sm">🗑️ Remove </button>
+                            </form>
+                            
+                            <a href="{% url 'view_taskTable_data' task.id %}" class="btn btn-sm btn-outline-primary">🔍View Data</a>
+                            
+                            
+
+                            <!-- <div class="mt-1 insert-update-fields">
+
+                                    <form  class="d-flex align-items-center w-90" method="post" enctype="multipart/form-data" action="{% url 'user_update_taskdata' task.id %}" onsubmit='return confirm("Are You Sure Want to Update this File data !")'>
+                                        {% csrf_token %}                                         
+                                                                                 
+                                        <div>
+                                            <input type="file" name="update_excel" class="form-control" id="update_excel" accept=".xlsx" required>
+                                        </div>
+                                        
+                                        <div class="px-2">
+                                            <button type="submit" class="btn btn-primary btn-sm ">Update</button>
+                                        </div>
+                                        
+                                    </form>
+                            </div> -->
+
+                        
+                            <form method="get" action="{% url 'download_Tasktable_as_excel' task.id %}">
+                                <button type="submit" class="btn  btn-sm btn-success">  Download  </button>
+                            </form>
+                        </div>
+                    </td>
+
+                </tr>
+                {% endfor %}
+
+                    <!-- Toast container (fixed top-right) -->
+                    <div id="toastContainer" class="position-fixed top-0 end-0 p-3 rounded" style="z-index: 11000;">
+                      <div id="appToast" class="toast align-items-center rounded" role="alert" aria-live="polite" aria-atomic="true">
+                            <div class="d-flex">
+                                    <div id="appToastBody" class="toast-body">
+                                      <!-- message goes here -->
+                                    </div>
+                                    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                      </div>
+                    </div>
+
+            </tbody>
+        </table>
+    {% else %}
+        <div class="alert alert-warning text-center">
+            There is No tasks assigned to the users yet !
+        </div>
+    {% endif %}
+    <div class="text-end">
+        <a href="{% url 'view_tables' %}" class="btn btn-secondary mt-3">← Back </a>
+    </div>
+</div>
+<script>
+
+document.addEventListener('DOMContentLoaded', function() {
+
+
+    document.addEventListener("change", function(e) {
+        
+        if (e.target.classList.contains("status-dropdown")) {
+
+            const taskId = e.target.dataset.taskId;
+            const newStatus = e.target.value;
+
+            fetch("{% url 'user_task_update_status' %}", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({
+                    task_id:taskId,
+                    status:newStatus
+                }) 
+                
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // SHOW 'TOAST MESSAGE' AND 'STATUS DROPDOWN COLOR'
+                    showMessage("✔   " + data.message, "success");
+                    updateSelectColor(e.target);  
+
+                } else {
+                    showMessage("✖   " + data.message, "danger");
+                }
+            });
+
+        }
+    });
+    
+    function showMessage(message, type = "success", delay = 10500) {
+            
+        const toastEl = document.getElementById("appToast");
+        const toastBody = document.getElementById("appToastBody");
+
+        // Set message text
+        toastBody.textContent = message;
+
+        // Reset classes then add a class that matches bootstrap alert color
+        // We'll use alert classes for background + text contrast
+        toastBody.classList.remove("bg-success", "bg-danger", "bg-info", "bg-warning", "text-white", "text-dark");
+        // Choose background / text class mapping
+        if (type === "success") {
+            toastBody.classList.add("bg-success","text-white");
+        } else if (type === "danger") {
+            toastBody.classList.add("bg-danger","text-white");
+        } else if (type === "warning") {
+            toastBody.classList.add("bg-warning","text-dark");
+        } else { // info or default
+            toastBody.classList.add("bg-info","text-dark");
+        }
+
+        // Configure toast options
+        const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { delay: delay });
+
+        // Show it
+        toast.show();
+    }
+    
+    
+    function getCookie(name){
+            
+                let cookieValue = null;
+                if ( document.cookie && document.cookie != '' ){
+                        let cookies=document.cookie.split(";");
+                        for (let cookie of cookies) {
+                            cookie = cookie.trim();
+                            if (cookie.startsWith(name + "=")) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                }
+                console.log("Cookie value :"+cookieValue)
+                return cookieValue; 
+            
+    }
+
+});
+</script>
+{% endblock %}

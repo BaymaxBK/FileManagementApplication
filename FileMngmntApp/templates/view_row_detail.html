@@ -3,21 +3,27 @@
 
 {% block content %}
 
-<h2>Row Details</h2>
+    <link href="https://cdn.datatables.net/1.13.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<div class="d-flex justify-content-end mb-2">
-    <button id="saveChangesBtn" class="btn btn-success">
-        {% if row %}💾 Save Changes{% else %} Add Item {% endif %}
-    </button>
-</div>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+
+<h2>Row Details</h2>
 
 <table class="table table-bordered">
     <tbody>
         {% for col in columns %}
-        <tr>
+        <tr >
             <td style="width:8%">{{forloop.counter}}</td>
             <th style="width:30%">{{ col }}</th>
-            <td contenteditable={% if col == "id"%} "false" {% else %} "true" {% endif %} data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td>
+            
+            <!-- <td contenteditable={% if col == "id" or not user.is_staff %} "false" {% else %} "true" {% endif %} data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td> -->
+             <td data-field="{{ col }}" contenteditable={% if col == "id" or "assigned_to" in col %}"false"{% elif user.is_staff %}"true"{% else %}"false"{% endif %}   class={% if col != "id" %} "editable-cell" {% else %} "" {% endif %}   tabindex="-1"> {% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td> 
         </tr>
         {% endfor %}
     </tbody>
@@ -27,45 +33,48 @@
 
 
 <script>
-document.addEventListener("DOMContentLoaded",function(){
 
-    document.getElementById('saveChangesBtn').addEventListener('click', function() {
-        const rows = document.querySelectorAll('tbody tr');
-        let updatedData = [];
-        const rowId = "{{ row_id|default_if_none:'-1' }}";
+$(document).ready(function(){
 
-        let rowData = { id: rowId };
+    var row_id="{{ row|get_item:'id' }}";
+    
 
-        rows.forEach(row => {
+    function updateField(field, value) {
+
+            console.log(`Row Id >> ${row_id}  Fields: ${field} Value: ${value}`);
+            table_id='{{table_id}}';
             
-            row.querySelectorAll('td[data-field]').forEach(cell => {
-                const field = cell.getAttribute('data-field');
-                const value = cell.innerText.trim();
-                rowData[field] = value;
+            console.log("Table Id : ",table_id);
+
+            $.ajax({       
+                    url: "{% url 'update_table_cell' %}",
+                    method: "POST",
+                    data: {
+                        task_tableId:table_id,
+                        id: row_id,
+                        field: field,
+                        value: value,
+                        csrfmiddlewaretoken: '{{ csrf_token }}'
+                    },
+                    success: function (response) {
+                        console.log("Updated successfully!");
+                    },
+
+                    error: function (response) {
+
+                        console.log("Error Message : >",response.responseJSON.error);
+                        alert("Updation Failed : "+response.responseJSON.error);
+                    }
             });
+    }
+
+    $(document).on("blur", ".editable-cell", function () {
+            let newValue = $(this).text().trim();
+            let field = $(this).data("field");
             
-        });
+            console.log("Updating:", row_id, field, newValue);
 
-        updatedData.push(rowData);
-
-        // Send AJAX POST to Django
-        fetch("{% url 'update_table_data' table_name=table_name %}", {
-
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: JSON.stringify({ rows: updatedData })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('✅ Data updated successfully!');
-            } else {
-                alert('❌ Error updating data.');
-            }
-        });
+            updateField(field, newValue);
     });
 
 });

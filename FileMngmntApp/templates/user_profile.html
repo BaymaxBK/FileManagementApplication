@@ -25,12 +25,34 @@
             <div class="col-md-4">
                 <div class="card border-success h-100">
                     <div class="card-body">
-                        <h5 class="card-title">Upload Data</h5>
-                        <p class="card-text">Let user upload the data into a custom table in the database.</p>
-                        <a href="{% url 'choose_table' %}" class="btn btn-primary mt-3 w-30">Upload File</a>
+                        <h5 class="card-title">All Tables</h5>
+                        <p class="card-text">Let user view the data in a custom table in the database.</p>
+                        <a href="{% url 'user_view_table' %}" class="btn btn-primary mt-3 w-30">Show Tables</a>
                     </div>
                 </div>
             </div>
+
+            <div class="col-md-4">
+                <div class="card border-success h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Upload Data</h5>
+                        <p class="card-text">Let user Insert and Update the data into a admin created table</p>
+                        <a href="{% url 'choose_table' %}" class="btn btn-success mt-3 w-30">Upload File</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card border-success h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Assigned Task</h5>
+                        <p class="card-text">User see the All Assigned Tasks here .</p>
+                        <a href="{% url 'user_assigned_tasks' %}"  class="btn btn-dark mt-3 w-30">Show Tasks</a>
+                    </div>
+                </div>
+            </div>
+
+
         </div>
 
     </div>
