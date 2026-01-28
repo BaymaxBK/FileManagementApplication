@@ -799,7 +799,7 @@ def update_excel_data(request, table_id):
                 print("Missing Header :",missing_header)
 
                 if missing_header:
-                    messages.error(request, f"The Excel must contain following Columns : {", ".join(missing_header)}")
+                    messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
                     return redirect("view_tables")
 
                 id_idx = [h.lower() for h in headers].index("id")
