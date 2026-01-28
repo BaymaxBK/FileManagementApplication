@@ -93,18 +93,18 @@ WSGI_APPLICATION = 'FileManagementProject.wsgi.application'
 load_dotenv()
 DATABASES = {
 
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'FileManagementDB',
-        'USER': 'postgres',
-        'PASSWORD': 'Babubk2000',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.postgresql',
+    #     'NAME': 'FileManagementDB',
+    #     'USER': 'postgres',
+    #     'PASSWORD': 'Babubk2000',
+    #     'HOST': 'localhost',
+    #     'PORT': '5432',
+    # }
 
-    # 'default': dj_database_url.config(
-    #     default=os.getenv('DATABASE_URL')
-    # )
+    'default': dj_database_url.config(
+        default=os.getenv('DATABASE_URL')
+    )
 
 }
 
