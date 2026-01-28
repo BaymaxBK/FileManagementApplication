@@ -1518,7 +1518,7 @@ def choose_table_and_upload(request):
             table_id = request.POST.get('table_id')
             selected_table = get_object_or_404(CustomTable, id=table_id)
 
-            print(f'Get FIle Condition : >> {request.FILES.get('excel_file')}')
+            print(f"Get FIle Condition : >> {request.FILES.get('excel_file')}")
             if request.FILES.get('excel_file'):
 
                 excel_file = request.FILES['excel_file']
