@@ -39,7 +39,7 @@ SECRET_KEY = 'django-insecure-%(a_&)-ho32$&9n1y5u+%x*&vg3=&rgqmmdf9*e&$51i(4yiqn
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["filemanagementapplication.onrender.com", "localhost", "127.0.0.1"]
+ALLOWED_HOSTS = ["cdms-filemanagementapplication.onrender.com", "localhost", "127.0.0.1"]
 
 
 # Application definition
