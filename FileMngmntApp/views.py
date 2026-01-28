@@ -1418,7 +1418,7 @@ def user_update_task_excel_data(request, tasktable_id):
             print("Missing Header :",missing_header)
 
             if missing_header:
-                messages.error(request, f"The Excel must contain following Columns : {", ".join(missing_header)}")
+                messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
                 return redirect("view_tables")
 
             id_idx = [h.lower() for h in headers].index("id")
@@ -1749,7 +1749,7 @@ def choose_table_and_upload(request):
                     print("Missing Header :",missing_header)
 
                     if missing_header:
-                        messages.error(request, f"The Excel must contain following Columns : {", ".join(missing_header)}")
+                        messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
                         return redirect("view_tables")
 
                     id_idx = [h.lower() for h in headers].index("id")
