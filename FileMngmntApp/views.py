@@ -540,13 +540,35 @@ def fetch_Table_data(request,table_id):
 
     data = [dict(zip(cols, r)) for r in rows]
 
+    # ---------------- FILTER OPTIONS  ----------------
+    filter_options = {}
+
+    for col in selected_columns:
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f'''
+                SELECT DISTINCT "{col}"::text
+                FROM "{table_name}"
+                {where_sql}
+                ORDER BY "{col}"::text
+                ''',
+                params
+            )
+            filter_options[col] = [
+                row[0] if row[0] is not None else ''
+                for row in cursor.fetchall()
+            ]
+
+    print("Filter Option :> ",filter_options)
     return JsonResponse({
         "draw": draw,
         "recordsTotal": total,
         "recordsFiltered": filtered,
         "data": data,
         "columns":cols,
-        "displayColumn":sqlFldAndDisplyFld_lookup
+        "displayColumn":sqlFldAndDisplyFld_lookup,
+        "filter_options": filter_options
     })
 
 def update_table_cell(request):
@@ -1598,7 +1620,7 @@ def choose_table_and_upload(request):
                 if InsertOrupdateType == "Insert":
 
                     print("File Insertion is Processing !")
-                    df = pd.read_excel(file_path,keep_default_na=False)
+                    df = pd.read_excel(file_path,sheet_name=Selected_sheet,keep_default_na=False)
 
                     Missing_column=[]
                     for col in required_headers:
@@ -1657,21 +1679,22 @@ def choose_table_and_upload(request):
                                     break
                         else:
                             valid_rows.append(row_dict)
+                    
+                    print("Valid Data >> : ",valid_rows)
+                    # INSERT A VALID ROWS
+                    if valid_rows:
                         
-                        # INSERT A VALID ROWS
-                        if valid_rows:
-                            
-                            columns = [f.field_name for f in fields]
-                            values_sql = ",".join(
-                                [
-                                    "(" + ",".join(["%s"] * len(columns)) + ")"
-                                    for _ in valid_rows
-                                ]
-                            )
-                            params = [r[c] for r in valid_rows for c in columns]
-                            insert_sql = f'INSERT INTO "{db_table_name}" ({",".join(columns)}) VALUES {values_sql}'
-                            with connection.cursor() as cur:
-                                cur.execute(insert_sql, params)
+                        columns = [f.field_name for f in fields]
+                        values_sql = ",".join(
+                            [
+                                "(" + ",".join(["%s"] * len(columns)) + ")"
+                                for _ in valid_rows
+                            ]
+                        )
+                        params = [r[c] for r in valid_rows for c in columns]
+                        insert_sql = f'INSERT INTO "{db_table_name}" ({",".join(columns)}) VALUES {values_sql}'
+                        with connection.cursor() as cur:
+                            cur.execute(insert_sql, params)
         
                     # --- Return invalid rows as Excel if any
                     if invalid_rows:

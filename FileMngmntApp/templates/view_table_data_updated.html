@@ -320,7 +320,12 @@
                     
             // ✅ Apply filter
             $(document).on('click', '.apply-filter', function () {
+
                 const dropdown = $(this).closest('.filter-dropdown');
+                const wrapper = dropdown.closest('.filter-wrapper');
+                const icon = wrapper.find('.filter-icon');
+
+
                 const checkboxes = dropdown.find('.column-filter');
                 const colIndex = checkboxes.first().data('col-index')
                 const selected = checkboxes.filter(':checked').map(function () {
@@ -331,20 +336,50 @@
                 const regex = selected.length ? '^(' + selected.join('|') + ')$' : '';
                 table.column(colIndex).search(regex, true, false).draw();
 
+                if (selected.length > 0) {
+                    icon.removeClass('bi-funnel').addClass('bi-funnel-fill text-primary');
+                }
+
                 dropdown.hide();
             });
 
                     // ✅ Clear filter
             $(document).on('click', '.clear-filter', function () {
                 const dropdown = $(this).closest('.filter-dropdown');
+                const wrapper = dropdown.closest('.filter-wrapper');
+                const icon = wrapper.find('.filter-icon');
+
                 const checkboxes = dropdown.find('.column-filter');
                 const colIndex = checkboxes.first().data('col-index');
                 checkboxes.prop('checked', false);
                 table.column(colIndex).search('').draw();
+
+                icon.removeClass('bi-funnel-fill text-primary').addClass('bi-funnel');
+
                 dropdown.hide();
             });
 
         }
+
+        console.log("ClearAll Button :> ",$('#clearAllFilters').html())
+
+        $(document).on('click','#clearAllFilters', function () {
+
+                console.log("Clear Filter All Filter Event Trigger's ")
+                // 1️⃣ Clear DataTable filters
+                table.search('').columns().search('').draw();
+
+                // 2️⃣ Uncheck all dropdown checkboxes
+                $('.filter-dropdown .column-filter').prop('checked', false);
+
+                // 3️⃣ Reset all filter icons
+                $('.filter-icon')
+                    .removeClass('bi-funnel-fill text-primary')
+                    .addClass('bi-funnel');
+        });
+
+        
+
         $(document).on("click", "#AssingId", function () {
 
             const taskName = $("#taskName").val().trim();
@@ -685,11 +720,11 @@ $(document).ready(function() {
                                     <th>
                                         <div class="filter-wrapper position-relative">
                                             <button class="filter-btn" data-col="${col.title}">
-                                                ${col.title}<i class="bi bi-chevron-down"></i>
+                                                ${col.title}<i class="bi bi-funnel ms-1 filter-icon"></i>
                                             </button>
                                             <div class="filter-dropdown">
                                                 <div class="checkbox-list"></div>
-                                                <div class="apply-clear-buttons bg-primary">
+                                                <div class="apply-clear-buttons">
                                                     <button class="btn btn-sm btn-primary apply-filter">Apply</button>
                                                     <button class="btn btn-sm btn-secondary clear-filter">Clear</button>
                                                 </div>
@@ -703,7 +738,8 @@ $(document).ready(function() {
                         }
                         else{
                             $('#headerRow').append(`<th>${col.title}</th>`);
-                            $('#excelFilterRow').append(`<th></th>`);
+                            $('#excelFilterRow').append(`<th class="flex-center mt-2"><button id="clearAllFilters" class="btn btn-outline-danger btn-sm mb-2">
+    <i class="bi bi-x-circle"></i> Clear All Filters</button></th>`);
                             $('#filterRow').append(`<th><button id="selectAllBtn" class="btn btn-sm btn-outline-success text-nowrap w-100"> Select All </button> </th>`);
                         }
                         
@@ -755,40 +791,80 @@ $(document).ready(function() {
                                         .attr("data-id", data.id);
                                 }
                             });
-                        },
+                        }
 
-                        initComplete: function() {
-                            const api = this.api();
+                        // initComplete: function() {
+                        //     const api = this.api();
 
-                            // Populate dropdown filters dynamically (Excel-like)
-                            api.columns().every(function() {
+                        //     // Populate dropdown filters dynamically (Excel-like)
+                        //     api.columns().every(function() {
                                 
-                                const column = this;
-                                const colIndex = column.index();
-                                const filterDropdown = $('#excelFilterRow th').eq(colIndex).find('.filter-dropdown .checkbox-list');
+                        //         const column = this;
+                        //         const colIndex = column.index();
+                        //         const filterDropdown = $('#excelFilterRow th').eq(colIndex).find('.filter-dropdown .checkbox-list');
 
-                                // Collect unique values
-                                column.data().unique().sort().each(function (d) {
+                        //         // Collect unique values
+                        //         column.data().unique().sort().each(function (d) {
 
                                     
-                                    console.log(`Assinged to data :>${d}|` )
-                                    const value=d;
-                                    if (value || value === '') {
-                                        const safeId = `chk_${colIndex}_${value.toString().replace(/\s+/g, '_')}`;
-                                        filterDropdown.append(`
-                                            <div class="form-check">
-                                                <input class="form-check-input column-filter" type="checkbox" value="${value}" id="${safeId}" data-col-index="${colIndex}">
-                                                <label class="form-check-label" for="${safeId}">${!value ? 'BLANK':value}</label>
-                                            </div>
-                                        `);
-                                    }
-                                });                                
-                            });
-                        }
+                        //             console.log(`Assinged to data :>${d}|` )
+                        //             const value=d;
+                        //             if (value || value === '') {
+                        //                 const safeId = `chk_${colIndex}_${value.toString().replace(/\s+/g, '_')}`;
+                        //                 filterDropdown.append(`
+                        //                     <div class="form-check">
+                        //                         <input class="form-check-input column-filter" type="checkbox" value="${value}" id="${safeId}" data-col-index="${colIndex}">
+                        //                         <label class="form-check-label" for="${safeId}">${!value ? 'BLANK':value}</label>
+                        //                     </div>
+                        //                 `);
+                        //             }
+                        //         });                                
+                        //     });
+                        // }
                         
                     });
                     
+                    table.on("xhr", function () {
 
+                        const json = table.ajax.json();
+                        if (!json || !json.filter_options) return;
+
+                        console.log("Updated Filter Options:", json.filter_options);
+
+                        Object.entries(json.filter_options).forEach(([colName, values]) => {
+                        
+                            const colIndex = selectedColumns.indexOf(colName);
+                            if (colIndex === -1) return;
+                        
+                            const dropdown = $('#excelFilterRow th')
+                                .eq(colIndex)
+                                .find('.checkbox-list');
+                        
+                            // Preserve already selected values
+                            const selectedValues = dropdown
+                                .find("input:checked")
+                                .map((_, el) => el.value)
+                                .get();
+                        
+                            dropdown.empty();
+                        
+                            values.forEach(val => {
+                                const safeVal = val === '' ? 'BLANK' : val;
+                                const checked = selectedValues.includes(val);
+                            
+                                dropdown.append(`
+                                    <div class="form-check">
+                                        <input class="form-check-input column-filter"
+                                               type="checkbox"
+                                               value="${val}"
+                                               data-col-index="${colIndex}"
+                                               ${checked ? "checked" : ""}>
+                                        <label class="form-check-label">${safeVal}</label>
+                                    </div>
+                                `);
+                            });
+                        });
+                    });
                     //$("#headerRow").hide()
 
                     //console.log("After Append :",$('#headerRow').html());
@@ -815,10 +891,10 @@ $(document).ready(function() {
                         });
                 });
 
-
-
             }
-            
+
+
+
             function updateField(rowId, field, value) {
                     
                 $.ajax({
