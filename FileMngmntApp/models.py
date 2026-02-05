@@ -17,6 +17,12 @@ class CustomTable(models.Model):
     def __str__(self):
         return self.display_name
     
+    def can_user_edit(self, user):
+        return (
+            user.is_authenticated and
+            self.users_can_edit.filter(id=user.id).exists()
+        )
+    
 class customFields(models.Model):
 
     table = models.ForeignKey(CustomTable, on_delete=models.CASCADE, related_name='fields')

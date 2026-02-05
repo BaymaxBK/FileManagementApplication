@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required,user_passes_test
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib import messages
 from django.shortcuts import render, redirect
+from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
 from django.db import connection,models
@@ -399,15 +400,17 @@ def view_table_data_updated(request,table_id):
     print("Task id  >> :",table_id)
     table = get_object_or_404(CustomTable, id=table_id)
     users = User.objects.filter(is_staff=False, is_superuser=False)
+    is_admin=is_userAdmin(request.user)
 
-
-    print("Table Name : >> ",table.display_name)  
-    return render(request, "view_table_data_updated.html", {"table": table,"users":users})
+    print("Table Name : >> ",table.display_name)
+    return render(request, "view_table_data_updated.html", {"table": table,"users":users,"is_admin":is_admin})
 
 def fetch_Table_data(request,table_id):
     
     """Return paginated JSON data for DataTables"""
     table = get_object_or_404(CustomTable, id=table_id)
+    can_edit=table.can_user_edit(request.user)
+    print(f'User "{request.user}" Can Edit > ',can_edit)
     
     
     table_name = table.table_name
@@ -504,7 +507,8 @@ def fetch_Table_data(request,table_id):
             params.append(f"%{pattern}%")
 
     if selectedRow:
-
+        
+        print("<< Selected Row ID >> ",selectedRow)
         placeholders = ",".join(["%s"] * len(selectedRow))
         where_clauses.append(f'id IN ({placeholders})')
         params.extend(selectedRow)
@@ -548,12 +552,12 @@ def fetch_Table_data(request,table_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 f'''
-                SELECT DISTINCT "{col}"::text
+                SELECT DISTINCT "{col}"
                 FROM "{table_name}"
                 {where_sql}
-                ORDER BY "{col}"::text
+                ORDER BY "{col}"
                 ''',
-                params
+                params  # ❌ NO limit / offset
             )
             filter_options[col] = [
                 row[0] if row[0] is not None else ''
@@ -568,7 +572,8 @@ def fetch_Table_data(request,table_id):
         "data": data,
         "columns":cols,
         "displayColumn":sqlFldAndDisplyFld_lookup,
-        "filter_options": filter_options
+        "filter_options": filter_options,
+        "can_edit":can_edit
     })
 
 def update_table_cell(request):
@@ -1158,6 +1163,7 @@ def view_row_data(request, table_name, row_id):
 
     table=get_object_or_404(CustomTable,table_name=table_name)
     print("Table In in View Row :", table.id)
+    usercan_edit=table.can_user_edit(request.user)
 
     row={}
     print("VIEW CALLED ")
@@ -1182,6 +1188,7 @@ def view_row_data(request, table_name, row_id):
         "columns": columns,
         "table_id":table.id,
         "table_name":table_name,
+        "is_userCanEdit":usercan_edit,
         "row_id":row_id
     })
 
@@ -1208,6 +1215,20 @@ def delete_table_row(request, table_name):
 
     return JsonResponse({'success': False, 'error': 'Invalid request method'})
 
+def adminViewdata_deleteSeleted_rows(request,table_name):
+    ids = request.POST.getlist('ids[]')
+
+    if not ids:
+        return JsonResponse({'error': 'No IDs provided'}, status=400)
+
+    with connection.cursor() as cursor:
+        placeholders = ",".join(["%s"] * len(ids))
+        cursor.execute(
+            f'DELETE FROM "{table_name}" WHERE id IN ({placeholders})',
+            ids
+        )
+
+    return JsonResponse({'success': True})
 
 #USER VIEW'S
 def view_taskTable_data(request, tasktable_id):

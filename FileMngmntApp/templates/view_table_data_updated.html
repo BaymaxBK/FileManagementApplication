@@ -35,61 +35,56 @@
             background: #f8f9fa;
             padding: 2px;
         }
-
-        /* Dropdown Styles */
-        .filter-dropdown {
-            display: none;
-            position: absolute;
-            top: 100%;
-            left: 0;
-            background: #fff;
-            z-index: 1000;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-            min-width: 400px;
-            max-height: 370px;
-            overflow-y: auto;
-            padding: 18px;
-        }
-
+        
+        
         .filter-btn {
+
             background: #fff;
+            border: 1px solid #ced4da;
+            font-size: 13px;
+            padding: 6px 8px;
+            border-radius: 5px;
+            width: 100%;
+            text-align: left;
+            height: 32px;         
+            line-height: 1.2;
+            
+            /* background: #fff;
             border: 1px solid #ced4da;
             font-size: 14px;
             padding: 10px 5px;
             border-radius: 5px;
             width: 100%;
-            text-align:left;
+            text-align:left; */
         }
-
+        
         .filter-btn i {
             float:right;
         }
-
+        
         .filter-dropdown .form-check {
-            font-size: 16px;
+            font-size: 10px;
         }
 
-        .apply-clear-buttons {
-            border-top: 1px solid #eee;
-            margin-top: 5px;
-            padding-top: 5px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 5px;
+        /* Scrollable area */
+        .filter-dropdown .checkbox-list {
+            flex: 1;
+            background-color: red !important;
+            overflow-y: auto;
+            padding: 6px 0;
         }
-
+        
+        
         #columnSelector .form-check {
             display: inline-block;
             margin-right: 10px;
         }
-            
-    </style>
+        
+        </style>
 
 </head>
 <body>
-
+    
 {% block content %}
     <style>
         #dataTable thead select {
@@ -111,8 +106,27 @@
         }
 
         /* Dropdown Styles */
-        .filter-dropdown {
-            display: none;
+         .filter-dropdown {
+
+            display: none; 
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            z-index: 1055;
+
+            /* background-color: pink !important; */
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+
+            min-width: 260px;
+            max-height: 320px;
+
+           
+            flex-direction: column;
+
+            /* display: none;
             position: absolute;
             top: 100%;
             left: 0;
@@ -124,7 +138,67 @@
             min-width: 400px;
             max-height: 370px;
             overflow-y: auto;
-            padding: 18px;
+            padding: 18px; */
+        }
+
+        .apply-clear-buttons {
+            
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            padding: 8px 6px;
+
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+
+            border-top: 1px solid #eee;
+
+            /* background: red !important;
+            border: 5px solid blue !important; */
+            
+            /* border-top: 1px solid #eee; 
+            margin-top: 5px;
+            padding-top: 5px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 5px; */
+        }
+
+        .select-all-wrapper {
+            position: sticky;
+            top: 0;
+            background: #fff;
+            padding:10px 35px;
+            border-bottom: 1px solid #eee;
+            z-index: 1;
+            width: 100%;
+        }
+        
+        .select-all-wrapper label {
+            display: inline-flex;
+            justify-content: center ;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;               
+            font-size:17px;
+            /* background-color: green; */
+            padding: 0 13px;                
+            margin: 0;
+            
+            line-height: 1;
+        }
+        
+        .select-all-wrapper input[type="checkbox"] {
+            margin: 0;
+            width: 30px;
+        }
+
+        
+        .filter-dropdown .checkbox-list {
+            flex: 1;
+            overflow-y: auto; 
+            padding: 6px 0px;
         }
 
         .filter-btn {
@@ -145,14 +219,7 @@
             font-size: 16px;
         }
 
-        .apply-clear-buttons {
-            border-top: 1px solid #eee;
-            margin-top: 5px;
-            padding-top: 5px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 5px;
-        }
+        
 
         #columnSelector .form-check {
             display: inline-block;
@@ -172,6 +239,7 @@
 
     <div class="container mt-3">
         <div class="row mb-2">
+            
             
             <div class="col">
                 <h4>Display Columns</h4>
@@ -209,7 +277,7 @@
         </div>
     </div>
 
-    <div class="d-flex justify-content-between align-items-center  mb-2">
+    <div class="{%if is_admin %} d-flex {% else %} d-none {% endif %} justify-content-between align-items-center  mb-2" >
         <h3>Table Name : <code>{{ table.display_name }}</code></h3>
         <button id="toggleTaskBtn" class="btn btn-primary mb-2">
         Assign Task</button>
@@ -257,6 +325,15 @@
         let table;
         window.selectedRowIds = [];   // ✅ Declare here (global)
 
+        function disableEditUI() {
+            console.log("Disable Edit Feature Triggered !");
+            $('.editable-cell').removeAttr('contenteditable');
+            $('.delete-row-btn').hide();
+            $('#deleteSelectedRows').hide();
+            $('#toggleTaskBtn').hide();
+            // $('#selectAllBtn').hide();
+        }
+        
         function getCookie(name){
             
                 let cookieValue = null;
@@ -299,12 +376,32 @@
 
         
         function setupColWiseFilterDropdownHandlers() {
+
+                $(document).on('change', '.select-all-checkbox', function () {
+
+                        const isChecked = $(this).is(':checked');
+
+                        // Find THIS dropdown only
+                        const dropdown = $(this).closest('.filter-dropdown');
+
+                        // Check / uncheck all column checkboxes inside this dropdown
+                        dropdown.find('.checkbox-list input[type="checkbox"]')
+                                .prop('checked', isChecked);
+                });
+
         // all the delegated event handlers go here (the block above)
         // ✅ Dropdown toggle handler
             $(document).on('click', '.filter-btn', function (e) {
                 e.stopPropagation();
-                $('.filter-dropdown').not($(this).siblings('.filter-dropdown')).hide();
-                $(this).siblings('.filter-dropdown').toggle();
+
+                console.log("Filter BUtton Even Triggered !");
+                // $('.filter-dropdown').not($(this).siblings('.filter-dropdown')).hide();
+                console.log("Total FIlter ",$('.filter-dropdown').length)
+                 $('.filter-dropdown').hide();
+                // open current
+                $(this).siblings('.filter-dropdown').css('display', 'flex');
+                
+                // $(this).siblings('.filter-dropdown').toggle();
             });
                 
             // ✅ Hide dropdowns when clicking outside
@@ -346,6 +443,9 @@
                     // ✅ Clear filter
             $(document).on('click', '.clear-filter', function () {
                 const dropdown = $(this).closest('.filter-dropdown');
+                dropdown.find('.checkbox-list input[type="checkbox"]')
+                                .prop('checked', false);
+
                 const wrapper = dropdown.closest('.filter-wrapper');
                 const icon = wrapper.find('.filter-icon');
 
@@ -480,6 +580,7 @@
             console.log("Selected IDs:", window.selectedRowIds);
         });
 
+
         // VIEW ROW BUTTON EVENT
         $(document).on("click", ".view-row-btn", function () {
             
@@ -525,6 +626,43 @@
                 }
 
         });
+        
+        // EVENT FOR DELETE THE 'SELECTED ROWS'
+        $(document).on('click', '#deleteSelectedRows', function () {
+    
+                if (window.selectedRowIds.length === 0) {
+                    alert('Please select at least one row');
+                    return;
+                }
+            
+                if (!confirm(`Delete ${window.selectedRowIds.length} selected rows?`)) {
+                    return;
+                }
+            
+                $.ajax({
+                    url: "{% url 'adminViewdata_deleteSeleted_rows' table_name=table.table_name %}", // Django delete endpoint
+                    type: 'POST',
+                    data: {
+                        ids: window.selectedRowIds,
+                    },
+                    success: function (response) {
+
+                        window.selectedRowIds.length = 0;
+                        updateSelectionCount();
+        
+                        table.ajax.reload(null, true);
+
+                        console.log("Selected IDs After Selected Deleted Button : ", window.selectedRowIds);
+                        table.draw(false); // redraw without page reset
+                    },
+
+                    error: function () {
+                        alert('Delete failed');
+                    }
+                });
+        });
+        
+
 
 
         // EVENT DELGATION FOR DELETE BUTTON
@@ -722,8 +860,21 @@ $(document).ready(function() {
                                             <button class="filter-btn" data-col="${col.title}">
                                                 ${col.title}<i class="bi bi-funnel ms-1 filter-icon"></i>
                                             </button>
+
                                             <div class="filter-dropdown">
-                                                <div class="checkbox-list"></div>
+                                                
+                                                <!-- Select All -->
+                                                <div class="select-all-wrapper mb-2">
+                                                    <label class="fw-semibold">
+                                                        <input type="checkbox" class="select-all-checkbox form-check-input">
+                                                        Select All
+                                                    </label>
+                                                </div>
+
+                                                 <!-- Checkbox list (scrollable) -->
+                                                <div class="checkbox-list ms-3"></div>
+
+                                                <!-- Fixed footer -->
                                                 <div class="apply-clear-buttons">
                                                     <button class="btn btn-sm btn-primary apply-filter">Apply</button>
                                                     <button class="btn btn-sm btn-secondary clear-filter">Clear</button>
@@ -738,9 +889,11 @@ $(document).ready(function() {
                         }
                         else{
                             $('#headerRow').append(`<th>${col.title}</th>`);
-                            $('#excelFilterRow').append(`<th class="flex-center mt-2"><button id="clearAllFilters" class="btn btn-outline-danger btn-sm mb-2">
+                            $('#excelFilterRow').append(`<th class="flex-center mt-2"><button id="clearAllFilters" class="btn btn-outline-danger text-nowrap btn-sm mb-2">
     <i class="bi bi-x-circle"></i> Clear All Filters</button></th>`);
-                            $('#filterRow').append(`<th><button id="selectAllBtn" class="btn btn-sm btn-outline-success text-nowrap w-100"> Select All </button> </th>`);
+                            $('#filterRow').append(`<th class="flex-center gap-2"><button id="deleteSelectedRows" class="btn btn-sm btn-outline-danger text-nowrap">
+        <i class="bi bi-trash"></i> Delete
+    </button><button id="selectAllBtn" class="btn btn-sm btn-outline-success text-nowrap w-100"> Select All </button> </th>`);
                         }
                         
 
@@ -750,7 +903,7 @@ $(document).ready(function() {
                     btn_txt=$('#ShowSelRowBtn').text().trim();
                     console.log("<SELET ROW BUTTON TEXT > ",btn_txt);
 
-
+                    let CAN_EDIT = false;
                     // Initialize DataTable
                     table = $('#dataTable').DataTable({
                         
@@ -762,7 +915,18 @@ $(document).ready(function() {
                                 // Send selected columns to backend
                                 d.selected_columns = selectedColumns.filter(col => col !== "Action");
                                 d.selectedRow = btn_txt === "Show" && window.selectedRowIds ? window.selectedRowIds :'';
-                            }           
+                            },
+                            dataSrc: function (json) {
+
+                                    CAN_EDIT = json.can_edit;
+                                    console.log("CAN_EDIT from AJAX:", CAN_EDIT);
+
+                                    if (!CAN_EDIT) {
+                                        disableEditUI();
+                                    }
+                                
+                                    return json.data;
+                                }           
                         },
                         columns: columns,
                         pageLength: 25,
@@ -773,12 +937,20 @@ $(document).ready(function() {
                             searchPlaceholder: "Global search...",
                             search: "",
                         },
-                        dom: "<'row'<'col-sm-6'l><'col-sm-6'f>>" +
-                             "<'row'<'col-sm-12'tr>>" +
-                             "<'row'<'col-sm-5'i><'col-sm-7'p>>",
+                        dom: "<'row mb-1'<'col-sm-6'l><'col-sm-6'f>>" +
+                                "<'row mb-1'<'col-sm-12 d-flex justify-content-end'i>>" +
+                                "<'row'<'col-sm-12'tr>>" +
+                                "<'row mt-2'<'col-sm-12'p>>",
 
                         createdRow: function (row, data, dataIndex) {
                             // Make all cells editable except the ID column
+                            if(!CAN_EDIT){
+                                $(row).find('.delete-row-btn').each(function(){
+                                    $(this).hide();
+                                });
+                                return
+                            }
+                            
                             $(row).find('td').each(function (colIndex) {
 
                                 let columnName = selectedColumns[colIndex];
@@ -791,6 +963,7 @@ $(document).ready(function() {
                                         .attr("data-id", data.id);
                                 }
                             });
+                            
                         }
 
                         // initComplete: function() {
@@ -890,6 +1063,8 @@ $(document).ready(function() {
                             }
                         });
                 });
+                
+                $('deleteSelectedRows').hide();
 
             }
 

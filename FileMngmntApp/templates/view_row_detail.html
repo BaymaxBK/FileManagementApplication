@@ -23,7 +23,7 @@
             <th style="width:30%">{{ col }}</th>
             
             <!-- <td contenteditable={% if col == "id" or not user.is_staff %} "false" {% else %} "true" {% endif %} data-field="{{ col }}" tabindex="-1">{% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td> -->
-             <td data-field="{{ col }}" contenteditable={% if col == "id" or "assigned_to" in col %}"false"{% elif user.is_staff %}"true"{% else %}"false"{% endif %}   class={% if col != "id" %} "editable-cell" {% else %} "" {% endif %}   tabindex="-1"> {% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td> 
+             <td data-field="{{ col }}" contenteditable={% if col == "id" or "assigned_to" in col %}"false"{% elif user.is_staff or is_userCanEdit %} "true" {% else %} "false" {% endif %}   class={% if col != "id" and user.is_staff or col != "id" and is_userCanEdit %} "editable-cell" {% else %} "" {% endif %}   tabindex="-1"> {% if row %}  {{row|get_item:col|format_date_auto}} {% endif %}</td> 
         </tr>
         {% endfor %}
     </tbody>
@@ -37,7 +37,10 @@
 $(document).ready(function(){
 
     var row_id="{{ row|get_item:'id' }}";
-    
+    let can_edit="{{is_userCanEdit}}"
+
+    console.log("Can Edit : >",can_edit === "False");
+    //if can_edit === "False"
 
     function updateField(field, value) {
 
