@@ -56,6 +56,20 @@
 
             </div>
 
+            <div class="col-md-4">
+
+                <div class="card border-secondary h-100 d-flex flex-column">
+                    <div class="card-body flex-fill">
+                        <h5 class="card-title">Dashboard Creation</h5>
+                        <p class="card-text">Create a dashbord for Created Tables</p>
+                        <a href="{% url 'create_statuscount_dashboard' %}" class="btn btn-secondary px-4">Create</a>
+                        <a href="{% url 'dashboard_list' %}" class="btn btn-secondary px-4">View</a>
+        
+                    </div>
+                </div>
+
+            </div>
+
             <!-- Add more admin sections below if needed -->
         </div>
         {% endblock %}

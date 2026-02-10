@@ -67,12 +67,13 @@
         }
 
         /* Scrollable area */
-        .filter-dropdown .checkbox-list {
-            flex: 1;
+        /* .filter-dropdown .checkbox-list { */
+            /* flex: 1; */
+            /* display: none !important;
             background-color: red !important;
             overflow-y: auto;
             padding: 6px 0;
-        }
+        } */
         
         
         #columnSelector .form-check {
@@ -91,9 +92,9 @@
             width: 100%;
             min-width: 100px;
         }
-        #dataTable thead input {
+       /* #dataTable thead input {
             width: 100%;
-        }
+        }*/
         #dataTable td{
             text-wrap: nowrap;
         }
@@ -120,7 +121,7 @@
             border-radius: 6px;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 
-            min-width: 260px;
+            min-width: 170px;
             max-height: 320px;
 
            
@@ -140,6 +141,19 @@
             overflow-y: auto;
             padding: 18px; */
         }
+
+        .checkbox-list > div {
+            display: flex;
+            align-items: flex-start;
+            font-size: 13px;
+            /* gap: 6px; */
+            /* padding: 0 4px; */
+            white-space: nowrap;
+        }
+        .checkbox-list input{
+            margin-top: 4px;   
+        }
+
 
         .apply-clear-buttons {
             
@@ -183,7 +197,7 @@
             white-space: nowrap;               
             font-size:17px;
             /* background-color: green; */
-            padding: 0 13px;                
+            /* padding: 0 13px;                 */
             margin: 0;
             
             line-height: 1;
@@ -191,12 +205,13 @@
         
         .select-all-wrapper input[type="checkbox"] {
             margin: 0;
-            width: 30px;
+            width: 10px;
         }
 
         
         .filter-dropdown .checkbox-list {
-            flex: 1;
+            /* flex: 1; */
+            
             overflow-y: auto; 
             padding: 6px 0px;
         }
@@ -216,14 +231,14 @@
         }
 
         .filter-dropdown .form-check {
-            font-size: 16px;
+            font-size: 12px;
         }
 
         
 
         #columnSelector .form-check {
             display: inline-block;
-            margin-right: 10px;
+            /* margin-right: 40px; */
         }
 
         
@@ -277,9 +292,9 @@
         </div>
     </div>
 
-    <div class="{%if is_admin %} d-flex {% else %} d-none {% endif %} justify-content-between align-items-center  mb-2" >
+    <div class="d-flex justify-content-between align-items-center  mb-2" >
         <h3>Table Name : <code>{{ table.display_name }}</code></h3>
-        <button id="toggleTaskBtn" class="btn btn-primary mb-2">
+        <button id="toggleTaskBtn" class="{%if not is_admin %} d-none {% endif %} btn btn-primary mb-2">
         Assign Task</button>
     </div>
 
@@ -866,7 +881,7 @@ $(document).ready(function() {
                                                 <!-- Select All -->
                                                 <div class="select-all-wrapper mb-2">
                                                     <label class="fw-semibold">
-                                                        <input type="checkbox" class="select-all-checkbox form-check-input">
+                                                        <input type="checkbox" class="select-all-checkbox">
                                                         Select All
                                                     </label>
                                                 </div>
@@ -1021,18 +1036,21 @@ $(document).ready(function() {
                         
                             dropdown.empty();
                         
-                            values.forEach(val => {
+                            values.forEach((val, i) => {
                                 const safeVal = val === '' ? 'BLANK' : val;
                                 const checked = selectedValues.includes(val);
+
+                                const checkboxId = `filter_${colIndex}_${i}`;
                             
                                 dropdown.append(`
-                                    <div class="form-check">
-                                        <input class="form-check-input column-filter"
+                                    <div class="checkbox-item">
+                                        <input class="column-filter"
+                                               id="${checkboxId}"
                                                type="checkbox"
                                                value="${val}"
                                                data-col-index="${colIndex}"
                                                ${checked ? "checked" : ""}>
-                                        <label class="form-check-label">${safeVal}</label>
+                                        <label for="${checkboxId}">${safeVal}</label>
                                     </div>
                                 `);
                             });

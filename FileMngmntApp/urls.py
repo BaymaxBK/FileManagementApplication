@@ -16,6 +16,13 @@ urlpatterns = [
     path('create_table/',views.create_custom_table,name='create_table'),
     path('create_task/',views.create_custom_Tasktable,name="create_task"),
     
+    path('create_dashboard/',views.create_statusCount_dashboard,name='create_statuscount_dashboard'),
+    path("dashboards/", views.dashboard_list, name="dashboard_list"),
+    path("dashboard/<int:dashboard_id>/", views.dashboard_view, name="view_dashboard"),
+    path("statusdashboard/<int:dashboard_id>/", views.dashboard_viewdata, name="view_dashboard_data"),
+    path('statusdashboard/<int:table_id>/data/', views.fetch_dashboard_data, name='fetch_dashboard_data'),
+    path("statusdashboard/<int:dashboard_id>/delete/", views.delete_dashboard, name="dashboard_delete"),
+
 
     path('view_tables/', views.view_staff_created_models, name='view_tables'),
     path('assigned_tasks/<int:table_id>/',views.list_assigned_tabletasks_for_admin,name="list_assigned_table_task_admin"),

@@ -90,6 +90,7 @@ WSGI_APPLICATION = 'FileManagementProject.wsgi.application'
 
 
 # ---// LOADE THE DOT ENV FILE //----
+
 # load_dotenv()
 DATABASES = {
 
@@ -149,7 +150,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+# STATIC_URL = 'static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -63,12 +63,12 @@
 
                                 <!-- VIEW BUTTON  -->
                                 <div>
-                                    <a href="{% url 'view_table_data' table.table_name %}" class="btn btn-outline-primary btn-sm mt-2">🔍 View Data</a>
+                                    <a href="{% url 'view_table_data_updated' table.id %}" class="btn btn-outline-primary btn-sm mt-2">🔍 View Data</a>
                                 </div>
 
-                                <div>
-                                    <a href="{% url 'view_table_data_updated' table.id %}" class="btn btn-outline-secondary btn-sm mt-2">🔍 View Data 2</a>
-                                </div>
+                                <!-- <div>
+                                    <a href= "{% url 'view_table_data' table.table_name %}" class="btn btn-outline-secondary btn-sm mt-2">🔍 View Data 2</a>
+                                </div> -->
 
                                 <!-- DOWNLOAD BUTTON -->
                                 <div class=" mt-2 d-flex gap-2 "> 

@@ -1,0 +1,603 @@
+{% extends "base.html" %}
+{% load static %}
+
+
+{% block content %}
+    <style>
+        #dataTable thead select {
+            width: 100%;
+            min-width: 100px;
+        }
+        #dataTable thead input {
+            width: 100%;
+        }
+        #dataTable td{
+            text-wrap: nowrap;
+        }
+            
+         /* Filter Row */
+        #excelFilterRow th {
+            position: relative;
+            background: #f8f9fa;
+            padding: 2px;
+        }
+
+        /* Dropdown Styles */
+         .filter-dropdown {
+
+            display: none; 
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            z-index: 1055;
+
+            /* background-color: pink !important; */
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+
+            min-width: 260px;
+            max-height: 320px;
+
+           
+            flex-direction: column;
+
+            /* display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: #fff;
+            z-index: 1000;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            min-width: 400px;
+            max-height: 370px;
+            overflow-y: auto;
+            padding: 18px; */
+        }
+
+        .apply-clear-buttons {
+            
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            padding: 8px 6px;
+
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+
+            border-top: 1px solid #eee;
+
+            /* background: red !important;
+            border: 5px solid blue !important; */
+            
+            /* border-top: 1px solid #eee; 
+            margin-top: 5px;
+            padding-top: 5px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 5px; */
+        }
+
+        .select-all-wrapper {
+            position: sticky;
+            top: 0;
+            background: #fff;
+            padding:10px 35px;
+            border-bottom: 1px solid #eee;
+            z-index: 1;
+            width: 100%;
+        }
+        
+        .select-all-wrapper label {
+            display: inline-flex;
+            justify-content: center ;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;               
+            font-size:17px;
+            /* background-color: green; */
+            padding: 0 13px;                
+            margin: 0;
+            
+            line-height: 1;
+        }
+        
+        .select-all-wrapper input[type="checkbox"] {
+            margin: 0;
+            width: 30px;
+        }
+
+        
+        .filter-dropdown .checkbox-list {
+            flex: 1;
+            overflow-y: auto; 
+            padding: 6px 0px;
+        }
+
+        .filter-btn {
+            background: #fff;
+            border: 1px solid #ced4da;
+            font-size: 14px;
+            padding: 10px 5px;
+            border-radius: 5px;
+            width: 100%;
+            text-align:left;
+        }
+
+        .filter-btn i {
+            float:right;
+        }
+
+        .filter-dropdown .form-check {
+            font-size: 16px;
+        }
+
+        
+
+        #columnSelector .form-check {
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        
+        .editable-cell {
+            outline: none;
+        }
+        .editable-cell-updated {
+            background: #d4edda !important;
+            transition: 0.5s;
+        }
+            
+</style>
+
+<!-- SELECT VISIBLE COLUMNS SECTION -->
+<div class="container mt-3">
+        <div class="row mb-2">
+            
+            
+            <div class="col">
+                <h4>Display Columns</h4>
+            </div>
+
+            <div class="col text-end">
+                <button id="toggleColumnSelector" class="btn btn-secondary btn-sm me-2">Show</button>
+            </div>
+           
+            <div id="columnSelectorWrapper" style="display: none;">
+                <div id="columnSelector" class="mb-3"></div>
+                
+                <div class="text-end">
+                    <button id="applyColumns" class="col btn btn-primary btn-sm">Apply Columns</button>
+                </div>
+            </div>
+
+        </div>
+</div>
+  
+<hr>
+
+<div class="mb-2" >
+        <h3>Table Name : <code>{{ dashboard.name }}</code></h3>
+</div>
+
+<!-- DATATABLE SECTION -->
+    <table id="dataTable" class="table table-striped table-bordered table-hover w-100" style="width:100%">        
+        <thead>
+            <tr id="headerRow">
+                <!-- Column headers will load dynamically -->
+            </tr>
+            <tr id="excelFilterRow"></tr>
+            <tr id="filterRow" class="mb-3"></tr>
+        </thead>
+              
+    </table>
+
+
+<!-- SCRIPT SECTION -->
+<script>
+        let table;
+        function getCookie(name){
+            
+                let cookieValue = null;
+                if ( document.cookie && document.cookie != '' ){
+                        let cookies=document.cookie.split(";");
+                        for (let cookie of cookies) {
+                            cookie = cookie.trim();
+                            if (cookie.startsWith(name + "=")) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                }
+                console.log("Cookie value :"+cookieValue)
+                return cookieValue; 
+            
+        }
+
+        // AJAX SETUP
+        $.ajaxSetup({
+            headers: {
+                "X-CSRFToken": getCookie("csrftoken")
+            }
+        });
+
+
+// FILTER DROPDWON EVENTS
+    function setupColWiseFilterDropdownHandlers() {
+
+                $(document).on('change', '.select-all-checkbox', function () {
+
+                        const isChecked = $(this).is(':checked');
+
+                        // Find THIS dropdown only
+                        const dropdown = $(this).closest('.filter-dropdown');
+
+                        // Check / uncheck all column checkboxes inside this dropdown
+                        dropdown.find('.checkbox-list input[type="checkbox"]')
+                                .prop('checked', isChecked);
+                });
+
+        // all the delegated event handlers go here (the block above)
+        // ✅ Dropdown toggle handler
+            $(document).on('click', '.filter-btn', function (e) {
+                e.stopPropagation();
+
+                console.log("Filter BUtton Even Triggered !");
+                // $('.filter-dropdown').not($(this).siblings('.filter-dropdown')).hide();
+                console.log("Total FIlter ",$('.filter-dropdown').length)
+                 $('.filter-dropdown').hide();
+                // open current
+                $(this).siblings('.filter-dropdown').css('display', 'flex');
+                
+                // $(this).siblings('.filter-dropdown').toggle();
+            });
+                
+            // ✅ Hide dropdowns when clicking outside
+            $(document).on('click', function () {
+                $('.filter-dropdown').hide();
+            });
+        
+            // ✅ Prevent closing dropdown on inside click
+            $(document).on('click', '.filter-dropdown', function (e) {
+                e.stopPropagation();
+            });
+
+                    
+            // ✅ Apply filter
+            $(document).on('click', '.apply-filter', function () {
+
+                const dropdown = $(this).closest('.filter-dropdown');
+                const wrapper = dropdown.closest('.filter-wrapper');
+                const icon = wrapper.find('.filter-icon');
+
+
+                const checkboxes = dropdown.find('.column-filter');
+                const colIndex = checkboxes.first().data('col-index')
+                const selected = checkboxes.filter(':checked').map(function () {
+                                            return $(this).val();
+                                }).get();
+
+                console.log("Selected Items :",selected," COlumn in Index: ",colIndex);
+                const regex = selected.length ? '^(' + selected.join('|') + ')$' : '';
+                table.column(colIndex).search(regex, true, false).draw();
+
+                if (selected.length > 0) {
+                    icon.removeClass('bi-funnel').addClass('bi-funnel-fill text-primary');
+                }
+
+                dropdown.hide();
+            });
+
+                    // ✅ Clear filter
+            $(document).on('click', '.clear-filter', function () {
+                const dropdown = $(this).closest('.filter-dropdown');
+                dropdown.find('.checkbox-list input[type="checkbox"]')
+                                .prop('checked', false);
+
+                const wrapper = dropdown.closest('.filter-wrapper');
+                const icon = wrapper.find('.filter-icon');
+
+                const checkboxes = dropdown.find('.column-filter');
+                const colIndex = checkboxes.first().data('col-index');
+                checkboxes.prop('checked', false);
+                table.column(colIndex).search('').draw();
+
+                icon.removeClass('bi-funnel-fill text-primary').addClass('bi-funnel');
+
+                dropdown.hide();
+            });
+
+    }
+
+        console.log("ClearAll Button :> ",$('#clearAllFilters').html())
+
+        $(document).on('click','#clearAllFilters', function () {
+
+                console.log("Clear Filter All Filter Event Trigger's ")
+                // 1️⃣ Clear DataTable filters
+                table.search('').columns().search('').draw();
+
+                // 2️⃣ Uncheck all dropdown checkboxes
+                $('.filter-dropdown .column-filter').prop('checked', false);
+
+                // 3️⃣ Reset all filter icons
+                $('.filter-icon')
+                    .removeClass('bi-funnel-fill text-primary')
+                    .addClass('bi-funnel');
+        });
+    
+
+$(document).ready(function() {
+            
+            const tableId = "{{ dashboard.id }}";
+            
+            let allColumns = [];
+            let selectedColumns = [];
+            
+            // SET THE EVENT HANDLERS FOR COLUM WISE FILTER DROPDOWN AND TEXT BOX'S 
+            setupColWiseFilterDropdownHandlers();
+
+
+            // SHOW/HIDE Display Column Button
+            $("#toggleColumnSelector").on("click", function () {        
+                const btn = $(this);
+
+                $("#columnSelectorWrapper").slideToggle(300, function () {
+                    if ($(this).is(":visible")) {
+                        btn.text("Hide");
+                    } else {
+                        btn.text("Show");
+                    }
+                });
+            });
+
+            // Fetch column names dynamically first
+            $.getJSON(`/statusdashboard/${tableId}/data/?length=1`, function(initData) {
+                    
+                    if (initData.data.length == 0) {
+                        $('#dataTable').html('<p>No data found</p>');
+                    }
+                    
+                    allColumns = Object.keys(initData.data[0])
+                    allColumns.push("Action");
+                    
+                    console.log("Column Name :> ", initData.columns);
+    
+                    console.log("All Columns : ",allColumns)
+
+        
+                    allColumns.forEach(col => {
+                        
+                        //console.log("Column :<> ",col)
+                        $('#columnSelector').append(`
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input column-toggle" type="checkbox" value="${col}" id="chk_${col}" checked>
+                                <label class="form-check-label" for="chk_${col}">${col}</label>
+                            </div>
+                        `);
+
+                    });
+
+        
+                    // Default: all columns selected
+                    selectedColumns = [...allColumns];            
+                    renderTable();
+
+                    // Step 4: When “Apply Columns” clicked → re-render
+                    $('#applyColumns').on('click', function() {
+                        
+                        selectedColumns = $('.column-toggle:checked').map(function() {
+                            return $(this).val();
+                        }).get();
+
+
+                        if ($.fn.DataTable.isDataTable('#dataTable')) {
+                                $('#dataTable').DataTable().clear().destroy();
+                                $('#dataTable thead').empty(); // ✅ important
+                        }
+                        renderTable();
+                    });
+                             
+            });
+
+            
+            function renderTable(){
+
+                $('#headerRow, #filterRow ,#excelFilterRow').empty();
+                    
+                    console.log("Selected Col in Render : ",selectedColumns);
+                    
+                    const columns=selectedColumns.map(col => {
+                            if (col === "Action") {
+                                return {
+                                    data: null,
+                                    title: "Action",
+                                    orderable: false,
+                                    searchable: false,
+                                    render: function(data, type, row) {
+                                        return `
+                                            
+                                            <button class="btn btn-sm btn-primary view-row view-row-btn" data-id="${row.id}">
+                                                 <i class="bi bi-eye"></i>
+                                            </button>
+                                            
+                                        `;
+                                    }
+                                };
+                            }
+                            else {
+                                return { data: col, title: col };
+                            }
+                    });
+
+                    $('#dataTable thead').html(`
+                        <tr id="headerRow"></tr>
+                        <tr id="excelFilterRow"></tr>
+                        <tr id="filterRow"></tr>
+                    `);
+
+                    columns.forEach(col => {
+                        
+                        //$('#headerRow').append(`<th>${col.title}</th>`);
+                        if (col.title !== "Action"){
+                            
+                            $('#headerRow').append(`<th>${col.title}</th>`);
+                            $('#excelFilterRow').append(`
+                                    <th>
+                                        <div class="filter-wrapper position-relative">
+                                            <button class="filter-btn" data-col="${col.title}">
+                                                ${col.title}<i class="bi bi-funnel ms-1 filter-icon"></i>
+                                            </button>
+
+                                            <div class="filter-dropdown">
+                                                
+                                                <!-- Select All -->
+                                                <div class="select-all-wrapper mb-2">
+                                                    <label class="fw-semibold">
+                                                        <input type="checkbox" class="select-all-checkbox form-check-input">
+                                                        Select All
+                                                    </label>
+                                                </div>
+
+                                                 <!-- Checkbox list (scrollable) -->
+                                                <div class="checkbox-list ms-3"></div>
+
+                                                <!-- Fixed footer -->
+                                                <div class="apply-clear-buttons">
+                                                    <button class="btn btn-sm btn-primary apply-filter">Apply</button>
+                                                    <button class="btn btn-sm btn-secondary clear-filter">Clear</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </th>
+                            `);
+                            $('#filterRow').append(
+                                `<th><input type="text" class="form-control form-control-sm column-filter" placeholder="Search ${col.title}" /></th>`
+                            );
+                        }
+                        else{
+                            $('#headerRow').append(`<th>${col.title}</th>`);
+                            $('#excelFilterRow').append(`<th class="flex-center mt-2"><button id="clearAllFilters" class="btn btn-outline-danger text-nowrap btn-sm mb-2">
+    <i class="bi bi-x-circle"></i> Clear All Filters</button></th>`);
+                            $('#filterRow').append(`<th class="flex-center text-bold mt-2"> Action </th>`);
+                        }
+                        
+                    });
+
+                    console.log("SELECTE COLUMN'S ",selectedColumns);
+                    
+                
+                    
+                    table = $('#dataTable').DataTable({
+                        
+                        processing: true,
+                        serverSide: true,
+                        ajax:{ 
+                            url:`/statusdashboard/${tableId}/data/`,
+                            data: function(d) {
+                                // Send selected columns to backend
+                                d.selected_columns = selectedColumns.filter(col => col !== "Action");
+                                
+                            },
+                                   
+                        },
+                        columns: columns,
+                        pageLength: 25,
+                        lengthMenu: [ [10, 25, 50, 100, 250, 500,1000,2000,5000,-1], [10, 25, 50, 100, 250, 500,1000,2000,5000,"All"] ],
+                        orderCellsTop: true,
+                        responsive: true,
+                        language: {
+                            searchPlaceholder: "Global search...",
+                            search: "",
+                        },
+                        dom: "<'row mb-1'<'col-sm-6'l><'col-sm-6'f>>" +
+                                "<'row mb-1'<'col-sm-12 d-flex justify-content-end'i>>" +
+                                "<'row'<'col-sm-12'tr>>" +
+                                "<'row mt-2'<'col-sm-12'p>>",
+
+                        createdRow: function (row, data, dataIndex) {
+                            
+                            
+                            $(row).find('td').each(function (colIndex) {
+
+                                let columnName = selectedColumns[colIndex];
+
+                                if (columnName !== "id" && columnName !== "Action" && columnName !== "assigned_to") {  // do not edit ID column
+                                    $(this)
+                                        .attr("contenteditable", "true")
+                                        .addClass("editable-cell")
+                                        .attr("data-field", columnName)
+                                        .attr("data-id", data.id);
+                                }
+                            });
+                            
+                        }
+
+                        
+                    });
+                    
+                    table.on("xhr", function () {
+
+                        const json = table.ajax.json();
+                        if (!json || !json.filter_options) return;
+
+                        console.log("Updated Filter Options:", json.filter_options);
+
+                        Object.entries(json.filter_options).forEach(([colName, values]) => {
+                        
+                            const colIndex = selectedColumns.indexOf(colName);
+                            if (colIndex === -1) return;
+                        
+                            const dropdown = $('#excelFilterRow th')
+                                .eq(colIndex)
+                                .find('.checkbox-list');
+                        
+                            // Preserve already selected values
+                            const selectedValues = dropdown
+                                .find("input:checked")
+                                .map((_, el) => el.value)
+                                .get();
+                        
+                            dropdown.empty();
+                        
+                            values.forEach(val => {
+                                const safeVal = val === '' ? 'BLANK' : val;
+                                const checked = selectedValues.includes(val);
+                            
+                                dropdown.append(`
+                                    <div class="form-check">
+                                        <input class="form-check-input column-filter"
+                                               type="checkbox"
+                                               value="${val}"
+                                               data-col-index="${colIndex}"
+                                               ${checked ? "checked" : ""}>
+                                        <label class="form-check-label">${safeVal}</label>
+                                    </div>
+                                `);
+                            });
+                        });
+                    });
+                    //$("#headerRow").hide()
+
+                    //console.log("After Append :",$('#headerRow').html());
+
+                     
+                // 🔹 Column-wise filtering
+                $('#dataTable thead .column-filter').on('keyup change', function() {
+                    const colIndex = $(this).parent().index();
+                    console.log("COL Index Search : ",colIndex);
+                    console.log("Search Value :",this.value);
+                    table.column(colIndex).search(this.value).draw();
+                });
+
+                $('#headerRow').hide();
+
+            }
+
+});
+</script>
+{% endblock %}

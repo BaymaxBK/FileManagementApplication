@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="d-flex justify-content-end align-items-center mb-3" >
+        <a href="{% url 'dashboard_list' %}" class="btn btn-secondary px-2">Dashboard List</a>
+    </div>
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Create Dashboard</h5>
+        </div>
+
+        <div class="card-body">
+
+            <form method="post" id="dashboardForm">
+                {% csrf_token %}
+
+                <!-- Dashboard Name -->
+                <div class="mb-3">
+                    <label class="form-label">Dashboard Name</label>
+                    <input type="text"
+                           name="dashboard_name"
+                           class="form-control"
+                           placeholder="e.g. Task Status Summary"
+                           required>
+                </div>
+
+                <!-- Select Table -->
+                <div class="mb-3">
+                    <label class="form-label">Select Table</label>
+                    <select name="table_id" id="tableSelect" class="form-select" required>
+                        <option value="">-- Select Table --</option>
+                        {% for table in tables %}
+                            <option value="{{ table.id }}">{{ table.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Group Columns -->
+                <div class="mb-3">
+                    <label class="form-label">
+                        Group Columns
+                        <small class="text-muted">(Select one or more)</small>
+                    </label>
+
+                    <div id="fieldsContainer"
+                         class="border rounded p-3 bg-white"
+                         style="min-height: 80px;">
+                        <span class="text-muted">Select a table to load columns</span>
+                    </div>
+                </div>
+
+                <!-- Submit -->
+                <div class="text-end">
+                    
+                    <button type="submit" class="btn btn-success">
+                        Create Dashboard
+                    </button>
+                </div>
+
+                
+
+            </form>
+
+        </div>
+    </div>
+
+<script>
+$(document).ready(function () {
+
+    $("#tableSelect").on("change", function () {
+
+        console.log("Table Dropdown Change Event Triggered !");
+        const tableId = $(this).val();
+        const $container = $("#fieldsContainer");
+
+        if (!tableId) {
+            $container.html("<span class='text-muted'>Select a table to load columns</span>");
+            return;
+        }
+
+        $container.html("<span class='text-muted'>Loading columns...</span>");
+
+        $.ajax({
+            url: `/get_table_fields/${tableId}/`,
+            type: "GET",
+            dataType: "json",
+            success: function (fields_json) {
+                $container.empty();
+                console.log("Tables Fields ",fields_json.fields_data);
+
+                if (fields_json.fields_data.length === 0) {
+                    $container.html("<span class='text-muted'>No columns found</span>");
+                    return;
+                }
+
+                $.each(fields_json.fields_data, function (index,field) {
+                    console.log("INdex for ColList > ",index)
+                    $container.append(`
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="group_fields"
+                                   value="${field.id}"
+                                   id="field_${field.id}">
+                                   
+                            <label class="form-check-label"
+                                   for="field_${field.id}">
+                                ${field.display_name}
+                            </label>
+                        </div>
+                    `);
+                });
+            },
+            error: function () {
+                $container.html("<span class='text-danger'>Failed to load columns</span>");
+            }
+        });
+    });
+
+});
+</script>
+{% endblock %}
+
+</body>
+</html>

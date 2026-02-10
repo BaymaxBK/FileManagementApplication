@@ -8,7 +8,8 @@ from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
 from django.db import connection,models
-from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,CustomTaskFields,AssignedTaskRows
+from django.http import HttpResponseForbidden
+from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn
 import re
 import os
 from django.views.decorators.csrf import csrf_exempt
@@ -557,7 +558,7 @@ def fetch_Table_data(request,table_id):
                 {where_sql}
                 ORDER BY "{col}"
                 ''',
-                params  # ❌ NO limit / offset
+                params 
             )
             filter_options[col] = [
                 row[0] if row[0] is not None else ''
@@ -651,8 +652,11 @@ def get_table_fields(request,table_id):
     table=get_object_or_404(CustomTable,id=table_id)
     fields=list(table.fields.values_list('display_name',flat=True))
 
+    fields_data = list(
+        table.fields.values("id", "display_name")
+    )
     print(f'fields : {fields}')
-    return JsonResponse({"fields":fields})
+    return JsonResponse({"fields":fields,"fields_data":fields_data})
 
 
 @login_required
@@ -1914,3 +1918,395 @@ def get_sheet_names(request):
         return JsonResponse({"sheet_names":sheet_names,"activeSheet_columns":columns})
     
     return JsonResponse({"error": "No file uploaded"}, status=400)
+
+@login_required
+@user_passes_test(is_userAdmin)
+def create_statusCount_dashboard(request):
+
+    """
+    Create a dashboard with:
+    - Dashboard name
+    - Selected CustomTable
+    - Multiple group columns
+    """
+
+    tables = CustomTable.objects.all()
+
+    if request.method == "POST":
+        dashboard_name = request.POST.get("dashboard_name")
+        table_id = request.POST.get("table_id")
+        group_field_ids = request.POST.getlist("group_fields")
+
+        # ---- Validation ----
+        if not dashboard_name:
+            messages.error(request, "Dashboard name is required.")
+            return redirect("create_dashboard")
+
+        if not table_id:
+            messages.error(request, "Please select a table.")
+            return redirect("create_dashboard")
+
+        if not group_field_ids:
+            messages.error(request, "Select at least one group column.")
+            return redirect("create_dashboard")
+
+        table = get_object_or_404(CustomTable, id=table_id)
+
+        # ---- Create Dashboard ----
+        dashboard = Dashboard.objects.create(
+            name=dashboard_name,
+            table=table,
+            created_by=request.user
+        )
+
+        # ---- Save Group Columns (order preserved) ----
+        for order, field_id in enumerate(group_field_ids):
+            field = get_object_or_404(customFields, id=field_id, table=table)
+
+            DashboardGroupColumn.objects.create(
+                dashboard=dashboard,
+                field=field,
+                order=order
+            )
+
+        messages.success(request, "Dashboard created successfully.")
+
+        # Redirect to dashboard view page
+        return redirect("create_statuscount_dashboard")
+
+    # ---- GET Request ----
+    return render(request, "create_dashboard.html", {
+        "tables": tables
+    })
+
+@login_required
+@user_passes_test(is_userAdmin)
+def dashboard_list(request):
+
+    """
+    List all created dashboards
+    """
+
+    dashboards = (
+        Dashboard.objects
+        .select_related("table", "created_by")
+        .order_by("-created_at")
+    )
+
+    return render(request, "Dashboard/dashboard_list.html", {
+        "dashboards": dashboards
+    })
+
+@login_required
+def dashboard_view(request, dashboard_id):
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id)
+
+    # if not can_view_dashboard(request.user, dashboard):
+    #     return HttpResponseForbidden("You do not have permission")
+
+    table_name = dashboard.table.table_name
+    group_columns = dashboard.group_columns.select_related("field").all()
+
+    if not group_columns:
+        return render(request, "dashboard/dashboard_view.html", {
+            "dashboard": dashboard,
+            "columns": [],
+            "data": []
+        })
+
+    column_names = [gc.field.field_name for gc in group_columns]
+
+    select_clause = ", ".join(column_names)
+    group_by_clause = ", ".join(column_names)
+
+    query = f"""
+        SELECT {select_clause}, COUNT(*) AS total
+        FROM {table_name}
+        GROUP BY {group_by_clause}
+        ORDER BY total DESC
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+    data = []
+    for row in rows:
+        row_data = {}
+        for idx, col in enumerate(column_names):
+            row_data[col] = row[idx]
+        row_data["count"] = row[-1]
+        data.append(row_data)
+
+    return render(request, "dashboard/dashboard_view.html", {
+        "dashboard": dashboard,
+        "columns": group_columns,
+        "data": data
+    })
+
+@login_required
+def dashboard_viewdata(request, dashboard_id):
+
+    dashboard= get_object_or_404(Dashboard, id=dashboard_id)
+
+
+    users = User.objects.filter(is_staff=False, is_superuser=False)
+    is_admin=is_userAdmin(request.user)
+
+    # print("Table Name : >> ",table.display_name)
+    return render(request, "dashboard/dashboard_viewdata.html", {
+        "dashboard": dashboard
+    })
+
+def fetch_dashboard_data(request,table_id):
+    """Return paginated JSON data for DataTables"""
+
+    print("Dashboard View data BV called !")
+    
+
+    dashboard = get_object_or_404(Dashboard, id=table_id)
+
+
+    table_name = dashboard.table.table_name
+    group_columns = dashboard.group_columns.select_related("field").all()
+
+    if group_columns:
+        print("Ground Colum is NOt None")
+
+    group_column_names = [gc.field.field_name for gc in group_columns]
+    print("Column Name to Grounp > ",group_column_names)
+
+    draw = int(request.GET.get("draw", 1))
+    start = int(request.GET.get("start", 0))
+    length = int(request.GET.get("length", 10))
+    search_global = request.GET.get("search[value]", "").strip()
+    selected_columns = request.GET.getlist('selected_columns[]', [])
+
+    # selectedRow=request.GET.getlist("selectedRow[]",[])
+    # print("Before Filter-Selected Row's >",selectedRow)
+    
+    # selectedRow=[int(rowId) for rowId in selectedRow if rowId.isdigit()]
+    # print("After Filter-Selected Row's >",selectedRow)
+
+    select_clause_placeholder=', '.join(f'"{col}"' for col in group_column_names)
+    print("Selected Columns :",selected_columns)
+    
+    print("Selecte class Plchlder > ",select_clause_placeholder)
+    
+    # --- SELECT CLAUSE ---
+
+
+    # Column Filter
+    column_searches = {}
+    
+
+    i = 0
+    while True:
+        column_name = request.GET.get(f"columns[{i}][data]")
+        if column_name is None:
+            break
+
+        search_val = request.GET.get(f"columns[{i}][search][value]")
+        if search_val:
+            column_searches[i] = search_val  # regex string from clien
+        i += 1
+    
+    print("Column Filter Value :>> ",column_searches)
+
+    
+    # Build SQL with WHERE clauses
+    where_clauses = []
+    params = []
+
+
+    # Global search
+    if search_global:
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                [table_name]
+            )
+            all_cols = [r[0] for r in cursor.fetchall()]
+
+        # build OR conditions on a safe subset (here we cast to text)
+        or_parts = []
+        for c in all_cols:
+            or_parts.append(f'"{c}"::text ILIKE %s')
+            params.append(f"%{search_global}%")
+        if or_parts:
+            where_clauses.append("(" + " OR ".join(or_parts) + ")")
+        
+
+    
+    having_clauses = []
+    having_params = []
+
+    # Column-specific filters (these are regexes like ^(A|B)$ sent from client)
+    # Convert them to safe LIKEs if possible. If you want to support regex on server,
+    # you can use ~ operator in PostgreSQL, but prefer simpler approach:
+    for col_idx, pattern in column_searches.items():
+        # find the column name for this index
+        col_name = request.GET.get(f"columns[{col_idx}][data]")
+        if not col_name:
+            continue
+
+        if col_name == "total":
+
+            if pattern.startswith('^') and pattern.endswith('$'):
+                having_inner = pattern[2:-2]
+                having_clauses.append("COUNT(*)::text ILIKE %s")
+                having_params.append(f"%{having_inner}%")
+            else:
+                having_clauses.append("COUNT(*)::text ILIKE %s")
+                having_params.append(f"%{pattern}%")
+
+        if col_name not in group_column_names:
+            continue
+
+        # pattern may be ^(val1|val2)$ -> extract values
+        # remove ^ and $ and split by |
+        if pattern.startswith('^') and pattern.endswith('$'):
+            inner = pattern[2:-2]
+            print(f"Innter TExt {inner}")
+            # unescape regex delimiters - this is simplistic; better to have client pass raw values instead
+            values = inner.split('|')
+            placeholders = ",".join(["%s"] * len(values))
+            where_clauses.append(f'"{col_name}"::text IN ({placeholders})')
+            params.extend(values)
+        else:
+            # fallback: ILIKE
+            where_clauses.append(f'"{col_name}"::text ILIKE %s')
+            params.append(f"%{pattern}%")
+
+    # if selectedRow:
+        
+    #     print("<< Selected Row ID >> ",selectedRow)
+    #     placeholders = ",".join(["%s"] * len(selectedRow))
+    #     where_clauses.append(f'id IN ({placeholders})')
+    #     params.extend(selectedRow)
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""  
+
+    having_sql = ''
+    if having_clauses:
+        having_sql = " HAVING " + " AND ".join(having_clauses)
+
+
+    # count total
+    with connection.cursor() as cursor:
+        cursor.execute(
+                    f'''
+                    SELECT COUNT(*) FROM (
+                        SELECT 1
+                        FROM "{table_name}"
+                        GROUP BY {select_clause_placeholder}
+                    ) t
+                '''
+            )
+        total = cursor.fetchone()[0] 
+
+    # count filtered
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f'''
+                SELECT COUNT(*) FROM (
+                    SELECT 1
+                    FROM "{table_name}"
+                    {where_sql}
+                    GROUP BY {select_clause_placeholder}
+                    {having_sql}
+                ) t
+            ''',
+            params + having_params
+        )
+        filtered = cursor.fetchone()[0]
+
+
+    # group_column_names=', '.join(column_names)
+    # fetch page
+    length= length if length!=-1 else total
+    final_query=f'SELECT {select_clause_placeholder}, COUNT(*) AS total FROM "{table_name}" {where_sql} GROUP BY {select_clause_placeholder} ORDER BY total DESC LIMIT %s OFFSET %s',params + [length, start]
+    
+    print(f"Param {params}")
+    print("Final Query :> ",final_query)
+
+    
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f'SELECT {select_clause_placeholder}, COUNT(*) AS total FROM "{table_name}" {where_sql} GROUP BY {select_clause_placeholder} {having_sql} ORDER BY total DESC LIMIT %s OFFSET %s',
+            params + having_params + [length, start]  
+        )
+        rows = cursor.fetchall()
+        cols = [c[0] for c in cursor.description]
+        print("Column Curs Desc > ",cols)
+
+    data = [dict(zip(cols, r)) for r in rows]
+
+    # ---------------- FILTER OPTIONS  ----------------
+    filter_options = {}
+    
+    # print("< Column Name FILTER > ",column_names)
+    print("WHERE CLASS > ",where_clauses)
+    print("Param > ",params)
+    for col in group_column_names :
+
+        with connection.cursor() as cursor:
+            
+            cursor.execute(
+                f'''
+                SELECT DISTINCT "{col}" FROM (
+                SELECT {select_clause_placeholder}, COUNT(*) AS totals FROM "{table_name}"
+                {where_sql}
+                GROUP BY {select_clause_placeholder}
+                {having_sql}
+                ) t 
+                ''',
+                params + having_params 
+            )
+
+            filter_options[col] = [
+                row[0] if row[0] is not None else ''
+                for row in cursor.fetchall()
+            ]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f'''
+            SELECT DISTINCT total
+            FROM (
+                SELECT COUNT(*) AS total
+                FROM "{table_name}"
+                {where_sql}
+                GROUP BY {select_clause_placeholder}
+                {having_sql}
+            ) t
+            ''',
+            params + having_params
+        )
+
+        filter_options["total"] = [row[0] for row in cursor.fetchall()]
+
+    print("Filter Option :> ",filter_options)
+    return JsonResponse({
+        "draw": draw,
+        "recordsTotal": total,
+        "recordsFiltered": filtered,
+        "data": data,
+        "columns":cols,
+        "filter_options": filter_options
+    })
+
+@login_required
+def delete_dashboard(request, dashboard_id):
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id)
+
+    # Permission check
+    if not (request.user.is_staff or dashboard.created_by == request.user):
+        return HttpResponseForbidden("You are not allowed to delete this dashboard")
+
+    if request.method == "POST":
+        dashboard.delete()
+        messages.success(request, "Dashboard deleted successfully")
+
+    return redirect("dashboard_list")
+   
