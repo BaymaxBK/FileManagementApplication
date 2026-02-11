@@ -2054,7 +2054,7 @@ def dashboard_viewdata(request, dashboard_id):
     is_admin=is_userAdmin(request.user)
 
     # print("Table Name : >> ",table.display_name)
-    return render(request, "dashboard/dashboard_viewdata.html", {
+    return render(request, "Dashboard/dashboard_viewdata.html", {
         "dashboard": dashboard
     })
 
