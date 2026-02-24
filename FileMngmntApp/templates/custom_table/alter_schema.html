@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load custom_tags %}
+
+{% block content %}
+        <div class="card shadow p-4">
+            <h2 class="mb-4">Edit Custom Table</h2>
+            
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="table_name" class="form-label">Table Name</label>
+                    <input type="text" id="table_name" class="form-control" value="{{table.display_name}}" readonly>
+                </div>
+
+                <div id="fields">
+
+                     {% for field in fields %}
+                        
+                        <li class="list-group-item">{{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %} — <code>{{ field.field_name }}</code> : {{ field.field_type }}</li>
+                     
+                        <div class="row g-2 mb-2 mt-1 align-items-center field-row">
+
+                            <div class="col-md-4">
+                                <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                                <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <select name="field_type[]" class="form-select field_type" required>
+                                    <option value="">Select Field Type</option>
+                                    <option value="VARCHAR(255)">Text</option>
+                                    <option value="INTEGER">Number</option>
+                                    <option value="DATE">Date</option>
+                                    <option value="BOOLEAN">Boolean</option>
+                                </select>
+                            </div>
+
+                        
+                            <div class="col-md-2 maxLengthField-div" style="display:none;">
+                                <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
+                            </div>
+
+                            <div class="col-md-1">
+                                <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm constraintToggle-btn" >⚙️</button>
+                            </div>
+
+
+                            <div  class="flex-center flex-warp gap-1 constraint-row" style="display: none;">
+
+                                <div class="w-50 d-flex justify-content-start border rounded">
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[]" value="0"> NOT NULL</label>
+                                </div>
+
+                                <div class="w-50 d-flex justify-content-start border rounded">
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[]" style="width:1rem; height:1rem;" value="0"> UNIQUE</label>
+                                </div>
+
+                                <div class="w-50 flex-center">
+                                    <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" placeholder="(optional)" class="form-control">
+                                </div>
+
+                                <div class="w-50 flex-center">
+                                    <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" placeholder="e.g. age >= 18" class="form-control">
+                                </div>
+
+                                 <div class="w-50 d-flex justify-content-start border rounded">
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                                </div>
+
+                            </div>
+
+                        </div> 
+                {% endfor %}
+                </div>
+
+                <div class="mb-3">
+                    <button id="addField-id" type="button" class="btn btn-outline-secondary btn-sm" >+ Add Field</button>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="createBtn">Save Changes</button>
+                <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary ms-2">Back to Dashboard</a>
+            </form>
+        </div>
+    {% endblock %}
+

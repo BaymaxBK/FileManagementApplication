@@ -1,3 +1,4 @@
+from datetime import datetime, date
 from django.contrib.auth import authenticate, login
 from django.shortcuts import render,redirect,get_object_or_404
 from django.contrib.auth.decorators import login_required,user_passes_test
@@ -7,9 +8,11 @@ from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
-from django.db import connection,models
+from django.db import connection,models,transaction
 from django.http import HttpResponseForbidden
-from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn
+from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,\
+CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn,CompositeUniqueConstraint,TableSchemaChange
+import traceback
 import re
 import os
 from django.views.decorators.csrf import csrf_exempt
@@ -226,7 +229,7 @@ def create_custom_table(request):
         uniques      = request.POST.getlist("unique[]")
         defaults     = request.POST.getlist("default_value[]")
         checks       = request.POST.getlist("check_condition[]")
-        composite_pks = request.POST.getlist("composite_pk[]")
+        composite_unique = request.POST.getlist("composite_unique[]")
 
         print("Fields Name : ",field_names)
         print("Filed Types :",field_types)
@@ -235,7 +238,7 @@ def create_custom_table(request):
         print("uiqeue : ",uniques)
         print("default  : ",defaults)
         print("checks : ",checks)
-        print("Composite pks : ",composite_pks)
+        print("Composite unique : ",composite_unique)
         #return redirect('create_table')
 
         if not table_name or not field_names or not field_types or len(field_names) != len(field_types):
@@ -245,24 +248,41 @@ def create_custom_table(request):
         table_name_sql=sanitize_name(table_name)
         field_NameTypeConst_sql=[]
         
-        Sql_types=["BOOLEAN","DATE","INTEGER","TEXT"]
+        # CREATE A FIELD NAME, TYPE AND CONTRAITS FOR 'SQL RAW' QUERY
         for i, name in enumerate(field_names):
             
             constraints = []
             safe_name=sanitize_name(name)
 
-            type_= field_types[i] if field_types[i] in Sql_types  else "TEXT" 
+            raw_type= field_types[i]
             len_=field_max_lengths[i]
 
-            sql_type=type_
-            
-            if type_ == "TEXT":
+            if raw_type.startswith("VARCHAR"):
                 try:
-                    max_len = int(len_) if type_ else 255
+                    max_len = int(len_) if len_ else 255
                 except ValueError:
                     max_len = 255
-
                 sql_type = f"VARCHAR({max_len})"
+
+            elif raw_type == "INTEGER":
+                
+                sql_type = "INTEGER"
+                max_len = None
+
+            elif raw_type == "DATE":
+                
+                sql_type = "DATE"
+                max_len = None
+
+            elif raw_type == "BOOLEAN":
+                
+                sql_type = "BOOLEAN"
+                max_len = None
+
+            else:
+                
+                sql_type = "VARCHAR(255)"
+                max_len = 255
 
             
             if str(i) in not_nulls:
@@ -305,11 +325,27 @@ def create_custom_table(request):
     
 
         # return render(request, "create_table.html")
-        
+        composite_unique_columns = []
+
+        for i, name in enumerate(field_names):
+            if str(i) in composite_unique:
+                composite_unique_columns.append(f'"{sanitize_name(name)}"')
+
+        composite_unique_clause = ""
+        if len(composite_unique_columns) > 1:
+            composite_unique_clause = f", UNIQUE ({', '.join(composite_unique_columns)})"
+
 
         fields_sql_query=", ".join(field_NameTypeConst_sql)
 
-        create_sql = f"CREATE TABLE IF NOT EXISTS {table_name_sql} (id SERIAL PRIMARY KEY, {fields_sql_query} , assigned_to VARCHAR(100) DEFAULT '');"
+        create_sql = f"""
+                        CREATE TABLE IF NOT EXISTS {table_name_sql} (
+                            id SERIAL PRIMARY KEY, 
+                            {fields_sql_query} , 
+                            assigned_to VARCHAR(100) DEFAULT ''
+                            {composite_unique_clause}       
+                        );"""
+        
         print("SQL QUERY :",create_sql)
 
         #return redirect('create_table')
@@ -325,35 +361,55 @@ def create_custom_table(request):
                 created_by=request.user
             )
 
-            Sql_types=["BOOLEAN","DATE","INTEGER","TEXT"]
+            
+            created_field_instances = []
+
             for i, name in enumerate(field_names):
 
-                constraints = []
-                
-                type_= field_types[i] if field_types[i] in Sql_types  else "TEXT" 
-                len_=field_max_lengths[i]
+                raw_type = field_types[i]   # value from HTML select
+                len_ = field_max_lengths[i]
 
-                sql_type=type_
-
-                if type_ == "TEXT":
+                if raw_type.startswith("VARCHAR"):
+                    field_kind = "text"
                     try:
-                        max_len = int(len_) if type_ else 255
+                        max_len = int(len_) if len_ else 255
                     except ValueError:
                         max_len = 255
-
                     sql_type = f"VARCHAR({max_len})"
 
+                elif raw_type == "INTEGER":
+                    field_kind = "number"
+                    sql_type = "INTEGER"
+                    max_len = None
 
+                elif raw_type == "DATE":
+                    field_kind = "date"
+                    sql_type = "DATE"
+                    max_len = None
+
+                elif raw_type == "BOOLEAN":
+                    field_kind = "boolean"
+                    sql_type = "BOOLEAN"
+                    max_len = None
+
+                else:
+                    field_kind = "text"
+                    sql_type = "VARCHAR(255)"
+                    max_len = 255
+
+            
                 _not_null =True if str(i) in not_nulls else False
                 _default =defaults[i].strip() if defaults[i].strip() else None
                 _unique=True if str(i) in uniques else False
                 _check=checks[i].strip() if checks[i].strip() else None
-                        
-                customFields.objects.create(
+                
+
+                field_obj = customFields.objects.create(
 
                     table =Tabel, 
                     display_name =name.strip(),  # Original name
                     field_name = sanitize_name(name),# Safe name
+                    field_kind = field_kind,
                     field_type = sql_type,
                     max_length=int(max_len) if "VARCHAR" in sql_type and max_len else None,
                     is_primary_key=False,
@@ -363,6 +419,16 @@ def create_custom_table(request):
                     check_constraint=_check
 
                 )
+
+                created_field_instances.append(field_obj)
+
+            # INSERT COMPOSTE UNIQUE TO THE 'CompositeUniqueConstraint (ORM)'
+            if len(composite_unique_columns) > 1:
+                cu = CompositeUniqueConstraint.objects.create(table=Tabel)
+
+                for i in composite_unique:
+                    cu.fields.add(created_field_instances[int(i)])
+
 
             # for fname, ftype,max_len in zip(field_names, field_types,field_max_lengths):
                 
@@ -386,6 +452,135 @@ def create_custom_table(request):
     return render(request, 'create_table.html')
 
 
+def alter_table_schema(request, table_id):
+    table = get_object_or_404(CustomTable, id=table_id)
+    fields = list(table.fields.all().order_by("id"))
+
+    if request.method == "POST":
+        sql_log = []
+
+        old_names = request.POST.getlist("old_field_name[]")
+        new_names = request.POST.getlist("new_field_name[]")
+        not_nulls = request.POST.getlist("not_null[]")
+        uniques   = request.POST.getlist("unique[]")
+        defaults  = request.POST.getlist("default_value[]")
+        checks    = request.POST.getlist("check_condition[]")
+
+        try:
+            with transaction.atomic():
+                with connection.cursor() as cursor:
+
+                    for i, field in enumerate(fields):
+                        old = old_names[i]
+                        new = new_names[i]
+
+                        # 🔄 RENAME
+                        if old != new:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            RENAME COLUMN "{old}" TO "{new}"
+                            '''
+                            cursor.execute(sql)
+                            sql_log.append(sql)
+
+                            
+
+                            field.field_name = new
+                            field.display_name = new
+                            field.save()
+
+                        col = new
+
+                        # 🔒 NOT NULL
+                        if str(i) in not_nulls:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            ALTER COLUMN "{col}" SET NOT NULL
+                            '''
+                        else:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            ALTER COLUMN "{col}" DROP NOT NULL
+                            '''
+                        cursor.execute(sql)
+                        sql_log.append(sql)
+
+                        # ⭐ UNIQUE
+                        constraint = f"{table.table_name}_{col}_unique"
+                        if str(i) in uniques:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            ADD CONSTRAINT IF NOT EXISTS {constraint}
+                            UNIQUE ("{col}")
+                            '''
+                        else:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            DROP CONSTRAINT IF EXISTS {constraint}
+                            '''
+                        cursor.execute(sql)
+                        sql_log.append(sql)
+
+                        # 🎯 DEFAULT
+                        if defaults[i]:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            ALTER COLUMN "{col}" SET DEFAULT '{defaults[i]}'
+                            '''
+                        else:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            ALTER COLUMN "{col}" DROP DEFAULT
+                            '''
+                        cursor.execute(sql)
+                        sql_log.append(sql)
+
+                        # 🔍 CHECK
+                        check_name = f"{table.table_name}_{col}_check"
+                        if checks[i]:
+                            sql = f'''
+                            ALTER TABLE "{table.table_name}"
+                            DROP CONSTRAINT IF EXISTS {check_name},
+                            ADD CONSTRAINT {check_name}
+                            CHECK ({checks[i]})
+                            '''
+                            cursor.execute(sql)
+                            sql_log.append(sql)
+
+                        # update metadata
+                        field.is_not_null = str(i) in not_nulls
+                        field.is_unique = str(i) in uniques
+                        field.default_value = defaults[i] or None
+                        field.check_constraint = checks[i] or None
+                        field.save()
+
+                TableSchemaChange.objects.create(
+                    table=table,
+                    executed_by=request.user,
+                    sql_executed="\n".join(sql_log)
+                )
+
+            return redirect("edit_custom_table", table.id)
+
+        except Exception as e:
+            TableSchemaChange.objects.create(
+                table=table,
+                executed_by=request.user,
+                sql_executed="\n".join(sql_log),
+                success=False,
+                error_message=str(e)
+            )
+            raise
+
+    return render(
+        request,
+        "custom_table/alter_schema.html",
+        {
+            "table": table,
+            "fields": fields
+        }
+    )
+
 
 @login_required
 def view_staff_created_models(request):
@@ -398,13 +593,32 @@ def view_staff_created_models(request):
 
 def view_table_data_updated(request,table_id):
 
-    print("Task id  >> :",table_id)
+    print("Table id  >> :",table_id)
     table = get_object_or_404(CustomTable, id=table_id)
     users = User.objects.filter(is_staff=False, is_superuser=False)
     is_admin=is_userAdmin(request.user)
 
+    columns = ["id"] + list(
+        table.fields.values_list("field_name", flat=True)
+    )
+
+    display_columns = ["ID"] + list(
+        table.fields.values_list("display_name", flat=True)
+    )
+
     print("Table Name : >> ",table.display_name)
-    return render(request, "view_table_data_updated.html", {"table": table,"users":users,"is_admin":is_admin})
+    print("(Init View) Display and Sql COlumn > ",dict(zip(columns,display_columns)))
+
+    return render(
+        request, "view_table_data_updated.html", 
+        {
+         "table": table,
+         "columns": columns,
+         "display_columns": display_columns,
+         "users":users,
+         "is_admin":is_admin
+        }
+    )
 
 def fetch_Table_data(request,table_id):
     
@@ -423,13 +637,30 @@ def fetch_Table_data(request,table_id):
     sqlFldAndDisplyFld_lookup=dict(zip(sql_fileds,display_fileds))
     print("Fields Dict :> ",sqlFldAndDisplyFld_lookup)
 
-    draw = int(request.GET.get("draw", 1))
-    start = int(request.GET.get("start", 0))
-    length = int(request.GET.get("length", 10))
-    search_global = request.GET.get("search[value]", "").strip()
-    selected_columns = request.GET.getlist('selected_columns[]', [])
+    print("METHOD:", request.method)
+    print("BODY:", request.body)
+    print("CONTENT-TYPE:", request.headers.get("Content-Type"))
+    
+    
+    # JSON DATA
+    json_data = json.loads(request.body)
 
-    selectedRow=request.GET.getlist("selectedRow[]",[])
+    is_init = json_data.get("init", False)
+    
+    if is_init:
+        return JsonResponse({
+            "columns": sql_fileds,
+            "displayColumn": sqlFldAndDisplyFld_lookup,
+        })
+    
+    draw = int(json_data.get("draw", 1))
+    start = int(json_data.get("start", 0))
+    length = int(json_data.get("length", 10))
+
+    search_global = json_data.get("search", {}).get("value", "").strip()
+    selected_columns = json_data.get('selected_columns', [])
+
+    selectedRow=json_data.get("selectedRow",[])
     print("Before Filter-Selected Row's >",selectedRow)
     
     selectedRow=[int(rowId) for rowId in selectedRow if rowId.isdigit()]
@@ -444,18 +675,25 @@ def fetch_Table_data(request,table_id):
 
     # Column Filter
     column_searches = {}
-    
+    columns = json_data.get("columns", [])
 
-    i = 0
-    while True:
-        column_name = request.GET.get(f"columns[{i}][data]")
-        if column_name is None:
-            break
+    for idx, col in enumerate(columns):
+        column_name = col.get("data")
+        search_val = col.get("search", {}).get("value", "").strip()
 
-        search_val = request.GET.get(f"columns[{i}][search][value]")
-        if search_val:
-            column_searches[i] = search_val  # regex string from clien
-        i += 1
+        if column_name and search_val:
+            column_searches[column_name] = search_val
+
+    # i = 0
+    # while True:
+    #     column_name = request.GET.get(f"columns[{i}][data]")
+    #     if column_name is None:
+    #         break
+
+    #     search_val = request.GET.get(f"columns[{i}][search][value]")
+    #     if search_val:
+    #         column_searches[i] = search_val  # regex string from clien
+    #     i += 1
     
     print("Column Filter Value :>> ",column_searches)
 
@@ -487,12 +725,9 @@ def fetch_Table_data(request,table_id):
      # Column-specific filters (these are regexes like ^(A|B)$ sent from client)
     # Convert them to safe LIKEs if possible. If you want to support regex on server,
     # you can use ~ operator in PostgreSQL, but prefer simpler approach:
-    for col_idx, pattern in column_searches.items():
+    for col_name, pattern in column_searches.items():
         # find the column name for this index
-        col_name = request.GET.get(f"columns[{col_idx}][data]")
-        if not col_name:
-            continue
-        # pattern may be ^(val1|val2)$ -> extract values
+                # pattern may be ^(val1|val2)$ -> extract values
         # remove ^ and $ and split by |
         if pattern.startswith('^') and pattern.endswith('$'):
             inner = pattern[2:-2]
@@ -797,6 +1032,63 @@ def download_table_as_excel(request, table_id):
     return response
 
 
+def normalize_value(val, field):
+
+    if val is None or val == "":
+        return None
+
+    field_kind = field.field_kind.lower()
+
+    try:
+        # VARCHAR 
+        if field_kind == "text":
+            return str(val)
+    
+        # INTEGER
+        if field_kind == "number":
+            if isinstance(val, (int, float)) and not pd.isna(val):
+                    return int(val)
+            return int(str(val).strip())
+
+        # DATE
+        if field_kind == "date":
+            # pandas Timestamp
+            if isinstance(val, pd.Timestamp):
+                return val.date()
+
+            # python datetime/date
+            if isinstance(val, datetime):
+                return val.date()
+            
+            # already date
+            if isinstance(val, date):
+                return val
+
+            # string date
+            try:
+                return datetime.strptime(str(val), "%d-%m-%Y").date()
+            except: 
+                raise ValueError("Invalid date format (expected DD-MM-YYYY)")
+
+  
+        # BOOLEAN
+        if field_kind == "boolean":
+            if isinstance(val, bool):
+                return val
+            if str(val).lower() in ["true", "1", "yes"]:
+                return True
+            if str(val).lower() in ["false", "0", "no"]:
+                return False
+            raise ValueError("Invalid boolean value")
+
+    except ValueError as e:
+    
+        raise ValueError(f"{field.display_name}: {e}")
+
+    return val
+
+# ADMIN DATA INSERT AND UPLOADE
+#>
 def update_excel_data(request, table_id):
 
     """Update existing table rows using Excel where the first column is 'id'."""
@@ -821,77 +1113,227 @@ def update_excel_data(request, table_id):
             if request.POST.get('UpdateInsert') == "Update":
                 
                 print("File Update is Processing !")
-                wb = load_workbook(file_path)
-                ws = wb.active  # use first sheet
+                df = pd.read_excel(file_path,keep_default_na=False)
+                
+                Missing_column = [col for col in df.columns if col not in ["id"] + display_fileds]
+                
+                if Missing_column:
 
-                headers = [str(cell.value).strip() for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+                    messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
+                    return redirect('view_tables') 
+                
+                table=CustomTable.objects.get(id=table_id)
 
-                missing_header=[req_col for req_col in ["id"] + display_fileds if req_col not in headers]
-                print("Missing Header :",missing_header)
+                fields=table.fields.all()
+                composite_unique_groups = list(table.composite_uniques.prefetch_related("fields"))
+                
+                # FIND THE INNER DUPLICATE INSIDE A UPLOADED FILE
+                seen_group_values = {
+                    ",".join(f.field_name for f in group.fields.all()): set()
+                    for group in composite_unique_groups
+                }
 
-                if missing_header:
-                    messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
-                    return redirect("view_tables")
-
-                id_idx = [h.lower() for h in headers].index("id")
-
-                # Collect rows as dicts
-                update_rows = []
-                for row in ws.iter_rows(min_row=2, values_only=True):
-
-                    row_dict = {headers[i]: row[i] if row[i] is not None else '' for i in range(len(headers))}
-                    update_rows.append(row_dict)
-
+                print("Fields :>>",fields)
+                
+                db_table_name = table.table_name
+                uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
+                
                 with connection.cursor() as cursor:
                     cursor.execute(f'SELECT id FROM "{custom_table.table_name}"')
                     valid_ids = {row[0] for row in cursor.fetchall()}
 
-                # Build SQL update  
-                invalid_rows=[]
-                with connection.cursor() as cursor:
+                # valid_rows, invalid_rows = [], []
 
-                    for r in update_rows:          
-                        row_id=r[headers[id_idx]]
-                        if row_id not in valid_ids:
-                            invalid_rows.append(r)
-                            continue 
+                Result_rows=[]
+                invalid_rows_exsits=False
 
-                        set_clause = ", ".join([f'"{DisplyFldAndsqlFld_lookup.get(df)}" = %s' for df in display_fileds])
-                        sql = f'UPDATE "{custom_table.table_name}" SET {set_clause} WHERE id = %s'
-                        values = [r[dsply_col] for dsply_col in display_fileds] + [row_id]
-                        cursor.execute(sql, values)
+                for idx, row in df.iterrows():
+                    
+                    row_dict = {}
+                    constraint_error_msgs = []
+                    
+                    #UNIQUER PRIMARY FIELD
+                    row_id = row.get("id")
+                    if row_id not in valid_ids:
 
-                if invalid_rows:
-                    print("Creating New Work BOOk!")
-                    InvalidRow_wb = Workbook()
-                    InvalidRow_ws = InvalidRow_wb.active
-                    InvalidRow_ws.title = "Invalid IDs"
+                        Result_rows.append({**row.to_dict(), "errors": f' Id :{row.get("id")} is Invalid !'})
+                        invalid_rows_exsits=True
+                        continue
 
-                    df = pd.read_excel(request.FILES["excel_file"])
-                    # Add header row
-                    print("Headers :",headers)
-                    InvalidRow_ws.append(headers)
+                    row_dict["id"] = row_id
+                    for f in fields:
 
-                    print("Header Were Created !")
+                        val = row.get(f.display_name)
+                        
+                        #NORMALIZE THE VALUES EACH FIELDS VALUES
+                        try:
+                            val = normalize_value(val, f)
+                        
+                        except ValueError as e:
+                            constraint_error_msgs.append(str(e))
+                            continue
 
-                    # Add the invalid rows
-                    for row in invalid_rows:
-                        print("Row :",row)
-                        row_data=list(row.values())
-                        print("Row Data ",row_data)
-                        InvalidRow_ws.append(row_data)
+                        # --- NOT NULL
+                        if f.is_not_null and (pd.isna(val) or val == ""):
+                            constraint_error_msgs.append(f"{f.display_name} is required")
+                            continue
+                        
+                        # --- max_length
+                        if f.max_length and isinstance(val, str) and len(val) > f.max_length:
+                            constraint_error_msgs.append(f"{f.display_name} exceeds max length")
+                            continue
+                        
+                        # --- default
+                        if (val is None or val == "") and f.default_value:
+                            val = f.default_value
+        
+                        row_dict[f.field_name] = val
+        
+                    if constraint_error_msgs:
 
-                    # 4️⃣ Create an HTTP response to download the file
-                    response = HttpResponse(
-                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        invalid_rows_exsits=True
+                        Result_rows.append({**row.to_dict(), "errors": "; ".join(constraint_error_msgs)})
+                        continue
+                    
+                    # Check unique columns manually (to avoid DB errors first)
+                    
+                    unique_error_msg =[]
+
+                    unique_error = False
+                    for f in fields.filter(is_unique=True):
+                        
+                        print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
+
+                        value = normalize_value(row_dict[f.field_name], f)
+                        if value in uniqueConCols_uniqVals[f.field_name]:
+                            
+                            unique_error = True
+                            invalid_rows_exsits=True
+
+                            unique_error_msg.append(f"{f.display_name} not unique in file")                            
+                            continue
+
+                        with connection.cursor() as cur:
+
+                            cur.execute(
+                                f'SELECT 1 FROM "{db_table_name}" WHERE "{f.field_name}" = %s AND id != %s LIMIT 1',
+                                (value,row_id)
+                            )
+                            if cur.fetchone():
+                                unique_error = True
+                                invalid_rows_exsits = True
+                                unique_error_msg.append(f"{f.display_name} already exists")
+                                continue
+
+                        uniqueConCols_uniqVals[f.field_name].add(value)
+                    
+                    
+                    # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+                    for group in composite_unique_groups:
+
+                        composite_error = False
+                        group_fields = [f.field_name for f in group.fields.all()]
+                        group_field_objs = {f.field_name: f for f in fields}
+
+                        group_key_name = ",".join(group_fields)
+                        
+                        # Skip if any value is NULL/empty (PostgreSQL allows this)
+                        if any(not row_dict.get(col) for col in group_fields):
+                            continue
+                        
+                        group_key = tuple(row_dict[col] for col in group_fields)
+                        
+                        # VALIDE INNED COMBINATION UNIUQUE CHECK
+                        if group_key in seen_group_values[group_key_name]:
+                            
+                            # Result_rows.append({
+                            #             **row.to_dict(),
+                            #             "errors": f"Duplicate combination in file: ({group_key_name})"
+                            #     })
+                            unique_error_msg.append(f"Duplicate combination in file: ({group_key_name})")
+                            
+                            invalid_rows_exsits=True
+                            composite_error = True
+                            break
+
+
+                        where_clause = " AND ".join([f'"{col}" = %s' for col in group_fields])
+                        params = [normalize_value(row_dict[gf],group_field_objs[gf]) 
+                                  for gf in group_fields]+ [row_id]
+                        
+                        with connection.cursor() as cur:
+                            cur.execute(
+                                f'''
+                                SELECT 1
+                                FROM "{db_table_name}"
+                                WHERE {where_clause}
+                                AND id != %s
+                                LIMIT 1
+                                ''',
+                                params
+                            )
+
+                            if cur.fetchone():
+
+                                col_names = ", ".join(group_fields)
+                                
+                                invalid_rows_exsits=True
+                                composite_error = True
+                                unique_error_msg.append(f"Combination ({col_names}) must be unique")
+                                # Result_rows.append({
+                                #         **row.to_dict(),
+                                #         "errors": f"Combination ({col_names}) must be unique"
+                                # })
+                                break
+
+                        seen_group_values[group_key_name].add(group_key)
+
+
+                    if composite_error or unique_error :
+                        print("COmposte eror exitsts added !")
+                        Result_rows.append({**row.to_dict(), "errors": "; ".join(unique_error_msg)})
+                        continue
+                    
+                    Result_rows.append(row_dict)
+
+
+                if invalid_rows_exsits:
+
+                    print("Invalid Row Exist >> ", invalid_rows_exsits)
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.append(list(Result_rows[0].keys()))
+                    for r in Result_rows:
+                        ws.append(list(r.values()))
+        
+                    buf = BytesIO()
+                    wb.save(buf)
+                    buf.seek(0)
+                    resp = HttpResponse(
+                        buf,
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
-                    response["Content-Disposition"] = f'attachment; filename="invalid_ids_{custom_table.table_name}.xlsx"'
+                    resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+                    return resp
 
-                    InvalidRow_wb.save(response)
+                print("Invalid row before update >>",invalid_rows_exsits)
+                # --- UPDATE BULK DATA
+                with connection.cursor() as cursor:
+                    for r in Result_rows:          
 
-                    return response
+                        print("Result row >> ",r)
 
-                messages.success(request, "Table updated successfully.")
+                        columns = [f.field_name for f in fields]
+                        set_clause = ", ".join([f'"{col}" = %s' for col in columns])
+                        print("Set Clause > ",set_clause)
+                        sql = f'UPDATE "{custom_table.table_name}" SET {set_clause} WHERE id = %s'
+                        
+                        params = [r[c] for c in columns] + [r["id"]]
+                        print("Params's >> ",params )
+                        cursor.execute(sql, params)
+
+
+                messages.success(request, "Table Records updated successfully.")
                 
             #INSERT THE FILE DATA
             else:
@@ -899,11 +1341,8 @@ def update_excel_data(request, table_id):
                 print("File Insertion is Processing !")
                 df = pd.read_excel(file_path,keep_default_na=False)
                 
-                Missing_column=[]
-                for col in display_fileds:
-                    if col != "id"  and col not in df.columns:
-                        Missing_column.append(col)
-
+                Missing_column=[col for col in display_fileds if col != "id"  and col not in df.columns]
+                
                 if Missing_column:
                     messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
                     return redirect('view_tables') 
@@ -911,11 +1350,22 @@ def update_excel_data(request, table_id):
                 table=CustomTable.objects.get(id=table_id)
 
                 fields=table.fields.all()
+                composite_unique_groups = list(table.composite_uniques.prefetch_related("fields"))
+                
+                # FIND THE INNER DUPLICATE INSIDE A UPLOADED FILE
+                seen_group_values = {
+                    ",".join(f.field_name for f in group.fields.all()): set()
+                    for group in composite_unique_groups
+                }
+
                 print("Fields :>>",fields)
                 
                 db_table_name = table.table_name
-
+                uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
+                
                 valid_rows, invalid_rows = [], []
+
+                Result_rows=[]
 
                 for idx, row in df.iterrows():
                     
@@ -924,7 +1374,15 @@ def update_excel_data(request, table_id):
         
                     for f in fields:
                         val = row.get(f.display_name)
-        
+                        
+                        #NORMALIZE THE VALUES EACH FIELDS VALUES
+                        try:
+                            val = normalize_value(val, f)
+                        
+                        except ValueError as e:
+                            error_msgs.append(str(e))
+                            continue
+
                         # --- NOT NULL
                         if f.is_not_null and (pd.isna(val) or val == ""):
                             error_msgs.append(f"{f.display_name} is required")
@@ -943,23 +1401,122 @@ def update_excel_data(request, table_id):
         
                     if error_msgs:
                         invalid_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
+
+                        Result_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
                         continue
                     
                     # Check unique columns manually (to avoid DB errors first)
+                    
+                    unique_error = False
                     for f in fields.filter(is_unique=True):
+                        
+                        print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
+
+                        value = normalize_value(row_dict[f.field_name], f)
+                        if value in uniqueConCols_uniqVals[f.field_name]:
+                            
+                            unique_error = True
+
+                            Result_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique in file"})                            
+                            invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique in file"})
+                            break
+
                         with connection.cursor() as cur:
+
                             cur.execute(
                                 f'SELECT 1 FROM "{db_table_name}" WHERE "{f.field_name}" = %s LIMIT 1',
-                                [row_dict[f.field_name]],
+                                (value,)
                             )
                             if cur.fetchone():
                                 invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
                                 break
-                    else:
-                        valid_rows.append(row_dict)
+
+                        uniqueConCols_uniqVals[f.field_name].add(value)
+                    
+                    
+                    # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+                    for group in composite_unique_groups:
+
+                        composite_error = False
+                        group_fields = [f.field_name for f in group.fields.all()]
+                        group_field_objs = {f.field_name: f for f in fields}
+
+                        group_key_name = ",".join(group_fields)
+                        
+                        # Skip if any value is NULL/empty (PostgreSQL allows this)
+                        if any(not row_dict.get(col) for col in group_fields):
+                            continue
+                        
+                        group_key = tuple(row_dict[col] for col in group_fields)
+                        
+                        # VALIDE INNED COMBINATION UNIUQUE CHECK
+                        if group_key in seen_group_values[group_key_name]:
+                            invalid_rows.append({
+                                **row.to_dict(),
+                                "errors": f"Duplicate combination in file: ({group_key_name})"
+                            })
+
+                            Result_rows.append({
+                                **row.to_dict(),
+                                "errors": f"Duplicate combination in file: ({group_key_name})"
+                            })
+                            composite_error = True
+                            break
+
+
+                        where_clause = " AND ".join([f'"{col}" = %s' for col in group_fields])
+                        params = [normalize_value(row_dict[gf],group_field_objs[gf]) 
+                                  for gf in group_fields]
+                        
+                        with connection.cursor() as cur:
+                            cur.execute(
+                                f'''
+                                SELECT 1
+                                FROM "{db_table_name}"
+                                WHERE {where_clause}
+                                LIMIT 1
+                                ''',
+                                params
+                            )
+
+                            if cur.fetchone():
+                                col_names = ", ".join(group_fields)
+                                invalid_rows.append({
+                                    **row.to_dict(),
+                                    "errors": f"Combination ({col_names}) must be unique"
+                                })
+                                break
+
+                        seen_group_values[group_key_name].add(group_key)
+
+                    if composite_error or unique_error:
+                            continue
+                    
+                    valid_rows.append(row_dict)
+                    Result_rows.append(row_dict)
+                
+                # RETURN INVALID ROWS TO THE USER
+                if invalid_rows:
+
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.append(list(Result_rows[0].keys()))
+                    for r in Result_rows:
+                        ws.append(list(r.values()))
         
-                # --- Bulk insert valid rows
+                    buf = BytesIO()
+                    wb.save(buf)
+                    buf.seek(0)
+                    resp = HttpResponse(
+                        buf,
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                    resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+                    return resp
+
+                
                 if valid_rows:
+
                     columns = [f.field_name for f in fields]
                     values_sql = ",".join(
                         [
@@ -972,28 +1529,16 @@ def update_excel_data(request, table_id):
                     with connection.cursor() as cur:
                         cur.execute(insert_sql, params)
         
-                # --- Return invalid rows as Excel if any
-                if invalid_rows:
-                    wb = Workbook()
-                    ws = wb.active
-                    ws.append(list(invalid_rows[0].keys()))
-                    for r in invalid_rows:
-                        ws.append(list(r.values()))
-        
-                    buf = BytesIO()
-                    wb.save(buf)
-                    buf.seek(0)
-                    resp = HttpResponse(
-                        buf,
-                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-                    resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
-                    return resp
+                
                 
                 messages.success(request, f"Total Row's {len(valid_rows)} Records were Inserted successfully.")
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messages.error(request, f"Error updating table: {e}")
+            raise
+
         finally:
             os.remove(file_path)
 
@@ -1538,7 +2083,345 @@ def user_update_task_excel_data(request, tasktable_id):
     return redirect("user_assigned_tasks")
 
 
-# WORK FOR GLOBAL
+# # WORK FOR GLOBAL
+# def choose_table_and_upload(request):
+    
+#     headers = []
+#     preview_rows = []
+#     rows_inserted = 0
+#     missing_headers = []
+#     extra_headers = []
+#     selected_table = None
+#     sheets=[]
+#     Selected_sheet=None
+
+#     # 
+    
+#     user = request.user
+#     tables = CustomTable.objects.filter(
+#         models.Q(users_can_edit=user) &
+#         models.Q(visible_to_users=user)
+#     ).distinct()
+
+#     #tables = CustomTable.objects.all()
+
+#     try:
+#         if request.method == 'POST':
+#             table_id = request.POST.get('table_id')
+#             selected_table = get_object_or_404(CustomTable, id=table_id)
+
+#             print(f"Get FIle Condition : >> {request.FILES.get('excel_file')}")
+#             if request.FILES.get('excel_file'):
+
+#                 excel_file = request.FILES['excel_file']
+#                 fs = FileSystemStorage(location=settings.UPLOADS_DIR)
+#                 filename = fs.save(excel_file.name, excel_file)
+
+#                 file_path = fs.path(filename)
+
+#                 # Save file path in session for later use
+#                 # request.session['uploaded_excel_path'] = file_path
+#                 request.session['uploaded_excel_path'] = f"uploads/{filename}"
+                
+#             else:
+#                 # No new file uploaded → try to get the saved one
+#                 relative_path = request.session.get('uploaded_excel_path')
+#                 print("Fetch From Session :(file Path ) ",relative_path)
+
+                
+#                 if not relative_path:
+#                     return render(request, 'choose_table.html', {
+#                         'tables': tables,
+#                         'error': 'No file uploaded or file missing.'
+#                     })
+                
+#                 file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+#                 if not os.path.exists(file_path):
+#                     return render(request, 'choose_table.html', {
+#                             'tables': tables,
+#                             'error': 'File missing.'
+#                     })
+                          
+#             print("Excel file :",file_path)
+
+#             # Load workbook
+#             wb = load_workbook(file_path,read_only=True)
+#             sheets=list(wb.sheetnames)
+
+#             Selected_sheet = request.POST.get('sheet_name')
+#             print("Selected Sheet >> ",Selected_sheet)
+#             if not Selected_sheet:
+#                 Selected_sheet=sheets[0]
+
+#             Active_sheet =wb[Selected_sheet] 
+#             # Excel headers
+#             headers = [str(cell.value).strip() if cell.value else "" 
+#                        for cell in next(Active_sheet.iter_rows(min_row=1, max_row=1))]
+            
+#             # Required headers from DB
+#             required_headers = list(selected_table.fields.values_list('display_name', flat=True))
+#             db_sanitized_headers=list(selected_table.fields.values_list('field_name', flat=True))
+
+#             # CREATE A LOOK UP
+#             header_lookup = dict(zip(required_headers, db_sanitized_headers))
+#             print("Header's And there Sanitized Name : ",header_lookup)
+
+#             # Check missing and extra headers
+#             missing_headers = [req for req in required_headers if req not in headers]
+            
+#             extra_headers = [h for h in headers if h not in required_headers]
+            
+#             # Only use matching headers
+#             matching_headers = [h for h in headers if h in required_headers]
+            
+#             # Preview first 5 rows
+#             preview_rows = list(Active_sheet.iter_rows(min_row=2, values_only=True))[:5]
+#             print("Matching Headers : >>>> ",matching_headers)
+#             # Insert if confirmed and no missing headers
+
+#             if "confirm_insert" in request.POST and not missing_headers:
+                
+#                 print("Request POST >> ",request.POST)
+#                 InsertOrupdateType=request.POST.get("InsertionOrUpdation_type")
+                
+#                 print("<< Type Instert Or Upated >> ",InsertOrupdateType)
+
+#                 # --//----------------- INSERTION -----------------//--
+#                 if InsertOrupdateType == "Insert":
+
+#                     print("File Insertion is Processing !")
+#                     df = pd.read_excel(file_path,sheet_name=Selected_sheet,keep_default_na=False)
+
+#                     Missing_column=[]
+#                     for col in required_headers:
+#                         if col != "id"  and col not in df.columns:
+#                             Missing_column.append(col)
+
+#                     if Missing_column:
+#                         messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
+#                         return redirect('view_tables')
+                    
+
+#                     fields=selected_table.fields.all()
+            
+#                     db_table_name = selected_table.table_name
+
+#                     valid_rows, invalid_rows = [], []
+
+#                     # ITERATING THE DATAFRAME ROW'S  
+#                     for idx, row in df.iterrows():
+                    
+#                         row_dict = {}
+#                         error_msgs = []
+
+#                         for f in fields:
+#                             val = row.get(f.display_name)
+
+#                             # --- NOT NULL
+#                             if f.is_not_null and (pd.isna(val) or val == ""):
+#                                 error_msgs.append(f"{f.display_name} is required")
+#                                 continue
+                            
+#                             # --- max_length
+#                             if f.max_length and isinstance(val, str) and len(val) > f.max_length:
+#                                 error_msgs.append(f"{f.display_name} exceeds max length")
+#                                 continue
+                            
+#                             # --- default
+#                             if (val is None or val == "") and f.default_value:
+#                                 val = f.default_value
+
+#                             row_dict[f.field_name] = val
+
+#                         if error_msgs:
+#                             invalid_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
+#                             continue
+                        
+#                         # Check unique columns manually (to avoid DB errors first)
+#                         for f in fields.filter(is_unique=True):
+#                             with connection.cursor() as cur:
+#                                 cur.execute(
+#                                     f'SELECT 1 FROM "{db_table_name}" WHERE "{f.field_name}" = %s LIMIT 1',
+#                                     [row_dict[f.field_name]],
+#                                 )
+#                                 if cur.fetchone():
+#                                     invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
+#                                     break
+#                         else:
+#                             valid_rows.append(row_dict)
+                    
+#                     print("Valid Data >> : ",valid_rows)
+#                     # INSERT A VALID ROWS
+#                     if valid_rows:
+                        
+#                         columns = [f.field_name for f in fields]
+#                         values_sql = ",".join(
+#                             [
+#                                 "(" + ",".join(["%s"] * len(columns)) + ")"
+#                                 for _ in valid_rows
+#                             ]
+#                         )
+#                         params = [r[c] for r in valid_rows for c in columns]
+#                         insert_sql = f'INSERT INTO "{db_table_name}" ({",".join(columns)}) VALUES {values_sql}'
+#                         with connection.cursor() as cur:
+#                             cur.execute(insert_sql, params)
+        
+#                     # --- Return invalid rows as Excel if any
+#                     if invalid_rows:
+#                         wb = Workbook()
+#                         ws = wb.active
+#                         ws.append(list(invalid_rows[0].keys()))
+#                         for r in invalid_rows:
+#                             ws.append(list(r.values()))
+
+#                         buf = BytesIO()
+#                         wb.save(buf)
+#                         buf.seek(0)
+#                         resp = HttpResponse(
+#                             buf,
+#                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+#                         )
+#                         resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+#                         return resp
+
+#                     messages.success(request, f"Total Row's {len(valid_rows)} Records were Inserted successfully.")
+                    
+#                     # data_rows = []
+#                     # batch_size = 1000
+                    
+#                     # sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
+#                     # print("Sanitized Headder in sql ",sanitized_Matching_headers)
+    
+#                     # placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
+#                     # col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
+#                     # sql = f'INSERT INTO "{selected_table.table_name}" ({col_names}) VALUES ({placeholders})'
+    
+#                     # for row in Active_sheet.iter_rows(min_row=2, values_only=True):
+#                     #     # Keep only matching columns
+#                     #     filtered_row = [row[headers.index(h)] for h in matching_headers]
+#                     #     data_rows.append(filtered_row)
+                        
+#                     #     if data_rows:
+#                     #         print("Data Row >>>>>>>>>>> ",data_rows)
+#                     #         # Format date columns if needed
+#                     #         for r_index, r in enumerate(data_rows):
+#                     #             for c_index, val in enumerate(r):
+#                     #                 if isinstance(val, str) and "-" in val:
+#                     #                     try:
+#                     #                         data_rows[r_index][c_index] = datetime.strptime(val, "%d-%m-%Y").strftime("%Y-%m-%d")
+#                     #                     except ValueError:
+#                     #                         pass
+                                        
+#                     #     if len(data_rows)>=batch_size:
+#                     #         with connection.cursor() as cursor:
+#                     #             cursor.executemany(sql, data_rows)
+#                     #         rows_inserted+=len(data_rows)
+#                     #         data_rows=[]
+#                     #         print("NO INSERTED ROW (BATCH ) :",rows_inserted)
+    
+#                     # # LESS THAN BATCH LIMIT OF DATA 'OR' REMAINING DATA 
+#                     # if data_rows:
+#                     #     with connection.cursor() as cursor:
+#                     #         cursor.executemany(sql, data_rows)
+#                     #     rows_inserted += len(data_rows)
+    
+#                     # print("Total Rows inserted:", rows_inserted)
+
+#                 # --//----------------- UPDATION -----------------//--
+#                 else:
+
+#                     print("<<<<<<  Updation To Be Done ! >>>>>>>")
+#                     print("File Update is Processing !")
+                    
+#                     wb = load_workbook(file_path)
+#                     ws = wb.active  # use first sheet
+
+#                     headers = [str(cell.value).strip() for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+#                     missing_header=[req_col for req_col in ["id"] + required_headers if req_col not in headers]
+#                     print("Missing Header :",missing_header)
+
+#                     if missing_header:
+#                         messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
+#                         return redirect("view_tables")
+
+#                     id_idx = [h.lower() for h in headers].index("id")
+
+#                     # Collect rows as dicts
+#                     update_rows = []
+#                     for row in ws.iter_rows(min_row=2, values_only=True):
+
+#                         row_dict = {headers[i]: row[i] if row[i] is not None else '' for i in range(len(headers))}
+#                         update_rows.append(row_dict)
+
+#                     with connection.cursor() as cursor:
+#                         cursor.execute(f'SELECT id FROM "{selected_table.table_name}"')
+#                         valid_ids = {row[0] for row in cursor.fetchall()}
+
+#                     # Build SQL update  
+#                     invalid_rows=[]
+#                     with connection.cursor() as cursor:
+
+#                         for r in update_rows:          
+#                             row_id=r[headers[id_idx]]
+#                             if row_id not in valid_ids:
+#                                 invalid_rows.append(r)
+#                                 continue 
+
+#                             set_clause = ", ".join([f'"{header_lookup.get(df)}" = %s' for df in required_headers])
+#                             sql = f'UPDATE "{selected_table.table_name}" SET {set_clause} WHERE id = %s'
+#                             values = [r[dsply_col] for dsply_col in required_headers] + [row_id]
+#                             cursor.execute(sql, values)
+
+#                     if invalid_rows:
+#                         print("Creating New Work BOOk!")
+#                         InvalidRow_wb = Workbook()
+#                         InvalidRow_ws = InvalidRow_wb.active
+#                         InvalidRow_ws.title = "Invalid IDs"
+    
+#                         df = pd.read_excel(request.FILES["excel_file"])
+#                         # Add header row
+#                         print("Headers :",headers)
+#                         InvalidRow_ws.append(headers)
+    
+#                         print("Header Were Created !")
+    
+#                         # Add the invalid rows
+#                         for row in invalid_rows:
+#                             print("Row :",row)
+#                             row_data=list(row.values())
+#                             print("Row Data ",row_data)
+#                             InvalidRow_ws.append(row_data)
+    
+#                         # 4️⃣ Create an HTTP response to download the file
+#                         response = HttpResponse(
+#                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#                         )
+#                         response["Content-Disposition"] = f'attachment; filename="invalid_ids_{selected_table.table_name}.xlsx"'
+    
+#                         InvalidRow_wb.save(response)
+    
+#                         return response
+    
+#                     messages.success(request, "Table updated successfully.")
+
+#     except Exception as e:
+#         print("Error:", (e))
+
+#     return render(request, 'choose_table.html', {
+#         'tables': tables,
+#         'headers': headers,
+#         'preview_rows': preview_rows,
+#         'selected_table': selected_table,
+#         'rows_inserted': rows_inserted,
+#         'missing_headers': missing_headers,
+#         'extra_headers': extra_headers,
+#         'sheets':sheets,
+#         'selected_sheet':Selected_sheet
+#     })
+
+# NEW WORK FOR GLOBAL TABLE
+#>
 def choose_table_and_upload(request):
     
     headers = []
@@ -1558,9 +2441,9 @@ def choose_table_and_upload(request):
         models.Q(visible_to_users=user)
     ).distinct()
 
-    #tables = CustomTable.objects.all()
 
     try:
+
         if request.method == 'POST':
             table_id = request.POST.get('table_id')
             selected_table = get_object_or_404(CustomTable, id=table_id)
@@ -1620,6 +2503,7 @@ def choose_table_and_upload(request):
             # CREATE A LOOK UP
             header_lookup = dict(zip(required_headers, db_sanitized_headers))
             print("Header's And there Sanitized Name : ",header_lookup)
+            DbToDiplayFields_lookup=header_lookup = dict(zip(db_sanitized_headers,required_headers))
 
             # Check missing and extra headers
             missing_headers = [req for req in required_headers if req not in headers]
@@ -1647,40 +2531,53 @@ def choose_table_and_upload(request):
                     print("File Insertion is Processing !")
                     df = pd.read_excel(file_path,sheet_name=Selected_sheet,keep_default_na=False)
 
-                    Missing_column=[]
-                    for col in required_headers:
-                        if col != "id"  and col not in df.columns:
-                            Missing_column.append(col)
+                    table=CustomTable.objects.get(id=table_id)
 
-                    if Missing_column:
-                        messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
-                        return redirect('view_tables')
-                    
+                    fields=table.fields.all()
+                    composite_unique_groups = list(table.composite_uniques.prefetch_related("fields"))
 
-                    fields=selected_table.fields.all()
-            
-                    db_table_name = selected_table.table_name
+                    # FIND THE INNER DUPLICATE INSIDE A UPLOADED FILE
+                    seen_group_values = {
+                        ",".join(f.field_name for f in group.fields.all()): set()
+                        for group in composite_unique_groups
+                    }
+
+                    print("Fields :>>",fields)
+
+                    db_table_name = table.table_name
+                    uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
 
                     valid_rows, invalid_rows = [], []
 
-                    # ITERATING THE DATAFRAME ROW'S  
+                    Result_rows=[]
+
                     for idx, row in df.iterrows():
-                    
+
                         row_dict = {}
                         error_msgs = []
 
                         for f in fields:
                             val = row.get(f.display_name)
 
+                            #NORMALIZE THE VALUES EACH FIELDS VALUES
+                            try:
+                                val = normalize_value(val, f)
+
+                            except ValueError as e:
+                                error_msgs.append(str(e))
+                                break
+
                             # --- NOT NULL
                             if f.is_not_null and (pd.isna(val) or val == ""):
+                                print(f"is Not null ! <> {val}")
                                 error_msgs.append(f"{f.display_name} is required")
-                                continue
+                                break
                             
                             # --- max_length
                             if f.max_length and isinstance(val, str) and len(val) > f.max_length:
+                                print(f"is Max len ! <> {val}")
                                 error_msgs.append(f"{f.display_name} exceeds max length")
-                                continue
+                                break
                             
                             # --- default
                             if (val is None or val == "") and f.default_value:
@@ -1690,43 +2587,118 @@ def choose_table_and_upload(request):
 
                         if error_msgs:
                             invalid_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
+
+                            Result_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
                             continue
                         
                         # Check unique columns manually (to avoid DB errors first)
+
+                        unique_error = False
                         for f in fields.filter(is_unique=True):
+
+                            print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
+
+                            value = normalize_value(row_dict[f.field_name], f)
+                            if value in uniqueConCols_uniqVals[f.field_name]:
+
+                                unique_error = True
+
+                                Result_rows.append({**row.to_dict(), "errors": f"' {f.display_name} ' not unique in file"})                            
+                                invalid_rows.append({**row.to_dict(), "errors": f"' {f.display_name} '  not unique in file"})
+                                break
+
                             with connection.cursor() as cur:
+
                                 cur.execute(
                                     f'SELECT 1 FROM "{db_table_name}" WHERE "{f.field_name}" = %s LIMIT 1',
-                                    [row_dict[f.field_name]],
+                                    (value,)
                                 )
                                 if cur.fetchone():
                                     invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
                                     break
-                        else:
-                            valid_rows.append(row_dict)
-                    
-                    print("Valid Data >> : ",valid_rows)
-                    # INSERT A VALID ROWS
-                    if valid_rows:
+
+                            uniqueConCols_uniqVals[f.field_name].add(value)
+
                         
-                        columns = [f.field_name for f in fields]
-                        values_sql = ",".join(
-                            [
-                                "(" + ",".join(["%s"] * len(columns)) + ")"
-                                for _ in valid_rows
-                            ]
-                        )
-                        params = [r[c] for r in valid_rows for c in columns]
-                        insert_sql = f'INSERT INTO "{db_table_name}" ({",".join(columns)}) VALUES {values_sql}'
-                        with connection.cursor() as cur:
-                            cur.execute(insert_sql, params)
-        
-                    # --- Return invalid rows as Excel if any
+                        composite_error = False
+                        # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+                        for group in composite_unique_groups:
+
+                            group_fields = [f.field_name for f in group.fields.all()]
+                            group_field_objs = {f.field_name: f for f in fields}
+
+                            group_key_name = ",".join(group_fields)
+
+                            DisplayfieldsForResult = ", ".join([f.display_name for f in group.fields.all()])
+                             
+                            # Skip if any value is NULL/empty (PostgreSQL allows this)
+                            if any(not row_dict.get(col) for col in group_fields):
+                                continue
+                            
+                            group_key = tuple(row_dict[col] for col in group_fields)
+
+                            # VALIDE INNED COMBINATION UNIUQUE CHECK
+                            if group_key in seen_group_values[group_key_name]:
+                                invalid_rows.append({
+                                    **row.to_dict(),
+                                    "errors": f"Duplicate combination in file: ( {DisplayfieldsForResult} )"
+                                })
+
+                                Result_rows.append({
+                                    **row.to_dict(),
+                                    "errors": f"Duplicate combination in file: ( {DisplayfieldsForResult} )"
+                                })
+                                composite_error = True
+                                break
+
+
+                            where_clause = " AND ".join([f'"{col}" = %s' for col in group_fields])
+                            params = [normalize_value(row_dict[gf],group_field_objs[gf]) 
+                                      for gf in group_fields]
+
+                            with connection.cursor() as cur:
+                                cur.execute(
+                                    f'''
+                                    SELECT 1
+                                    FROM "{db_table_name}"
+                                    WHERE {where_clause}
+                                    LIMIT 1
+                                    ''',
+                                    params
+                                )
+
+                                if cur.fetchone():
+                                    col_names = ", ".join(group_fields)
+                                    invalid_rows.append({
+                                        **row.to_dict(),
+                                        "errors": f"Combination ({col_names}) must be unique"
+                                    })
+                                    break
+
+                            seen_group_values[group_key_name].add(group_key)
+
+                        if composite_error or unique_error:
+                                continue
+                            
+                        valid_rows.append(row_dict)
+                        Result_rows.append(row_dict)
+
+                    # RETURN INVALID ROWS TO THE USER
                     if invalid_rows:
+
                         wb = Workbook()
                         ws = wb.active
-                        ws.append(list(invalid_rows[0].keys()))
-                        for r in invalid_rows:
+                        print("Result Row ",list(Result_rows[0].keys()))
+                        resultColums= list(Result_rows[0].keys())
+                        result_headers=[col for col in resultColums if col != 'errors' ] 
+
+                        if resultColums[1] in DbToDiplayFields_lookup:
+                            result_headers=[DbToDiplayFields_lookup[col] for col in resultColums if col != 'errors' ]
+                        
+                        result_headers=result_headers + ["Error Info"]
+
+                        ws.append(result_headers)
+                        for r in Result_rows:
                             ws.append(list(r.values()))
 
                         buf = BytesIO()
@@ -1739,128 +2711,257 @@ def choose_table_and_upload(request):
                         resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
                         return resp
 
-                    messages.success(request, f"Total Row's {len(valid_rows)} Records were Inserted successfully.")
-                    
-                    # data_rows = []
-                    # batch_size = 1000
-                    
-                    # sanitized_Matching_headers=[header_lookup[matched_header] for matched_header in matching_headers]
-                    # print("Sanitized Headder in sql ",sanitized_Matching_headers)
-    
-                    # placeholders = ", ".join(["%s"] * len(sanitized_Matching_headers))
-                    # col_names = ", ".join([f'"{col}"' for col in sanitized_Matching_headers])
-                    # sql = f'INSERT INTO "{selected_table.table_name}" ({col_names}) VALUES ({placeholders})'
-    
-                    # for row in Active_sheet.iter_rows(min_row=2, values_only=True):
-                    #     # Keep only matching columns
-                    #     filtered_row = [row[headers.index(h)] for h in matching_headers]
-                    #     data_rows.append(filtered_row)
-                        
-                    #     if data_rows:
-                    #         print("Data Row >>>>>>>>>>> ",data_rows)
-                    #         # Format date columns if needed
-                    #         for r_index, r in enumerate(data_rows):
-                    #             for c_index, val in enumerate(r):
-                    #                 if isinstance(val, str) and "-" in val:
-                    #                     try:
-                    #                         data_rows[r_index][c_index] = datetime.strptime(val, "%d-%m-%Y").strftime("%Y-%m-%d")
-                    #                     except ValueError:
-                    #                         pass
-                                        
-                    #     if len(data_rows)>=batch_size:
-                    #         with connection.cursor() as cursor:
-                    #             cursor.executemany(sql, data_rows)
-                    #         rows_inserted+=len(data_rows)
-                    #         data_rows=[]
-                    #         print("NO INSERTED ROW (BATCH ) :",rows_inserted)
-    
-                    # # LESS THAN BATCH LIMIT OF DATA 'OR' REMAINING DATA 
-                    # if data_rows:
-                    #     with connection.cursor() as cursor:
-                    #         cursor.executemany(sql, data_rows)
-                    #     rows_inserted += len(data_rows)
-    
-                    # print("Total Rows inserted:", rows_inserted)
 
+                    if valid_rows:
+
+                        columns = [f.field_name for f in fields]
+                        values_sql = ",".join(
+                            [
+                                "(" + ",".join(["%s"] * len(columns)) + ")"
+                                for _ in valid_rows
+                            ]
+                        )
+                        params = [r[c] for r in valid_rows for c in columns]
+                        insert_sql = f'INSERT INTO "{db_table_name}" ({",".join(columns)}) VALUES {values_sql}'
+                        with connection.cursor() as cur:
+                            cur.execute(insert_sql, params)
+
+
+
+                    messages.success(request, f"Total Row's {len(valid_rows)} Records were Inserted successfully.")
+                            
+                
                 # --//----------------- UPDATION -----------------//--
                 else:
-
-                    print("<<<<<<  Updation To Be Done ! >>>>>>>")
-                    print("File Update is Processing !")
                     
-                    wb = load_workbook(file_path)
-                    ws = wb.active  # use first sheet
+                    print("<<<<<<  Updation To Be Done ! >>>>>>>")
+                    table=CustomTable.objects.get(id=table_id)
 
-                    headers = [str(cell.value).strip() for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+                    fields=table.fields.all()
+                    composite_unique_groups = list(table.composite_uniques.prefetch_related("fields"))
 
-                    missing_header=[req_col for req_col in ["id"] + required_headers if req_col not in headers]
-                    print("Missing Header :",missing_header)
+                    # FIND THE INNER DUPLICATE INSIDE A UPLOADED FILE
+                    seen_group_values = {
+                        ",".join(f.field_name for f in group.fields.all()): set()
+                        for group in composite_unique_groups
+                    }
 
-                    if missing_header:
-                        messages.error(request, f"The Excel must contain following Columns : {', '.join(missing_header)}")
-                        return redirect("view_tables")
+                    print("Fields :>>",fields)
 
-                    id_idx = [h.lower() for h in headers].index("id")
-
-                    # Collect rows as dicts
-                    update_rows = []
-                    for row in ws.iter_rows(min_row=2, values_only=True):
-
-                        row_dict = {headers[i]: row[i] if row[i] is not None else '' for i in range(len(headers))}
-                        update_rows.append(row_dict)
+                    db_table_name = table.table_name
+                    uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
 
                     with connection.cursor() as cursor:
                         cursor.execute(f'SELECT id FROM "{selected_table.table_name}"')
                         valid_ids = {row[0] for row in cursor.fetchall()}
 
-                    # Build SQL update  
-                    invalid_rows=[]
-                    with connection.cursor() as cursor:
+                    # valid_rows, invalid_rows = [], []
 
-                        for r in update_rows:          
-                            row_id=r[headers[id_idx]]
-                            if row_id not in valid_ids:
-                                invalid_rows.append(r)
-                                continue 
+                    Result_rows=[]
+                    invalid_rows_exsits=False
 
-                            set_clause = ", ".join([f'"{header_lookup.get(df)}" = %s' for df in required_headers])
-                            sql = f'UPDATE "{selected_table.table_name}" SET {set_clause} WHERE id = %s'
-                            values = [r[dsply_col] for dsply_col in required_headers] + [row_id]
-                            cursor.execute(sql, values)
+                    df = pd.read_excel(file_path,sheet_name=Selected_sheet,keep_default_na=False)
+                    for idx, row in df.iterrows():
 
-                    if invalid_rows:
-                        print("Creating New Work BOOk!")
-                        InvalidRow_wb = Workbook()
-                        InvalidRow_ws = InvalidRow_wb.active
-                        InvalidRow_ws.title = "Invalid IDs"
-    
-                        df = pd.read_excel(request.FILES["excel_file"])
-                        # Add header row
-                        print("Headers :",headers)
-                        InvalidRow_ws.append(headers)
-    
-                        print("Header Were Created !")
-    
-                        # Add the invalid rows
-                        for row in invalid_rows:
-                            print("Row :",row)
-                            row_data=list(row.values())
-                            print("Row Data ",row_data)
-                            InvalidRow_ws.append(row_data)
-    
-                        # 4️⃣ Create an HTTP response to download the file
-                        response = HttpResponse(
-                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        row_dict = {}
+                        constraint_error_msgs = []
+
+                        #UNIQUER PRIMARY FIELD
+                        row_id = row.get("id")
+                        if row_id not in valid_ids:
+
+                            Result_rows.append({**row.to_dict(), "errors": f' Id :{row.get("id")} is Invalid !'})
+                            invalid_rows_exsits=True
+                            continue
+
+                        row_dict["id"] = row_id
+                        for f in fields:
+
+                            val = row.get(f.display_name)
+
+                            #NORMALIZE THE VALUES EACH FIELDS VALUES
+                            try:
+                                val = normalize_value(val, f)
+
+                            except ValueError as e:
+                                constraint_error_msgs.append(str(e))
+                                continue
+
+                            # --- NOT NULL
+                            if f.is_not_null and (pd.isna(val) or val == ""):
+                                constraint_error_msgs.append(f"' {f.display_name} '  is required")
+                                continue
+                            
+                            # --- max_length
+                            if f.max_length and isinstance(val, str) and len(val) > f.max_length:
+                                constraint_error_msgs.append(f"' {f.display_name} ' exceeds max length")
+                                continue
+                            
+                            # --- default
+                            if (val is None or val == "") and f.default_value:
+                                val = f.default_value
+
+                            row_dict[f.field_name] = val
+
+                        if constraint_error_msgs:
+
+                            invalid_rows_exsits=True
+                            Result_rows.append({**row.to_dict(), "errors": "; ".join(constraint_error_msgs)})
+                            continue
+                        
+                        # Check unique columns manually (to avoid DB errors first)
+
+                        unique_error_msg =[]
+
+                        unique_error = False
+                        for f in fields.filter(is_unique=True):
+
+                            print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
+
+                            value = normalize_value(row_dict[f.field_name], f)
+                            if value in uniqueConCols_uniqVals[f.field_name]:
+
+                                unique_error = True
+                                invalid_rows_exsits=True
+
+                                unique_error_msg.append(f"' {f.display_name} ' not unique in file")                            
+                                continue
+
+                            with connection.cursor() as cur:
+
+                                cur.execute(
+                                    f'SELECT 1 FROM "{db_table_name}" WHERE "{f.field_name}" = %s AND id != %s LIMIT 1',
+                                    (value,row_id)
+                                )
+                                if cur.fetchone():
+                                    unique_error = True
+                                    invalid_rows_exsits = True
+                                    unique_error_msg.append(f"' {f.display_name} ' already exists")
+                                    continue
+
+                            uniqueConCols_uniqVals[f.field_name].add(value)
+
+
+                        # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+                        composite_error = False
+                        for group in composite_unique_groups:
+
+                            
+                            group_fields = [f.field_name for f in group.fields.all()]
+                            group_field_objs = {f.field_name: f for f in fields}
+
+                            group_key_name = ",".join(group_fields)
+
+                            # Skip if any value is NULL/empty (PostgreSQL allows this)
+                            if any(not row_dict.get(col) for col in group_fields):
+                                continue
+                            
+                            group_key = tuple(row_dict[col] for col in group_fields)
+
+                            # VALIDE INNED COMBINATION UNIUQUE CHECK
+                            if group_key in seen_group_values[group_key_name]:
+
+                                # Result_rows.append({
+                                #             **row.to_dict(),
+                                #             "errors": f"Duplicate combination in file: ({group_key_name})"
+                                #     })
+                                unique_error_msg.append(f"Duplicate combination in file: ( {group_key_name} )")
+
+                                invalid_rows_exsits=True
+                                composite_error = True
+                                break
+
+
+                            where_clause = " AND ".join([f'"{col}" = %s' for col in group_fields])
+                            params = [normalize_value(row_dict[gf],group_field_objs[gf]) 
+                                      for gf in group_fields]+ [row_id]
+
+                            with connection.cursor() as cur:
+                                cur.execute(
+                                    f'''
+                                    SELECT 1
+                                    FROM "{db_table_name}"
+                                    WHERE {where_clause}
+                                    AND id != %s
+                                    LIMIT 1
+                                    ''',
+                                    params
+                                )
+
+                                if cur.fetchone():
+
+                                    col_names = ", ".join(group_fields)
+
+                                    invalid_rows_exsits=True
+                                    composite_error = True
+                                    unique_error_msg.append(f"Combination ({col_names}) must be unique")
+                                    # Result_rows.append({
+                                    #         **row.to_dict(),
+                                    #         "errors": f"Combination ({col_names}) must be unique"
+                                    # })
+                                    break
+
+                            seen_group_values[group_key_name].add(group_key)
+
+
+                        if composite_error or unique_error :
+                            print("COmposte eror exitsts added !")
+                            Result_rows.append({**row.to_dict(), "errors": "; ".join(unique_error_msg)})
+                            continue
+                        
+                        Result_rows.append(row_dict)
+
+
+                    if invalid_rows_exsits:
+
+                        print("Invalid Row Exist >> ", invalid_rows_exsits)
+                        resultFilename=f"{selected_table.table_name} Result.xlsx"
+                        wb = Workbook()
+                        ws = wb.active
+                        resultColums= list(Result_rows[0].keys())
+                        result_headers=[col for col in resultColums if col != 'errors' ] 
+
+                        if resultColums[1] in DbToDiplayFields_lookup:
+                            result_headers=[DbToDiplayFields_lookup[col] for col in resultColums if col != 'errors' and col!="id" ]
+                        
+                        result_headers=["id" ] +result_headers + ["Error Info"]
+
+                        ws.append(result_headers)
+                        for r in Result_rows:
+                            ws.append(list(r.values()))
+
+                        buf = BytesIO()
+                        wb.save(buf)
+                        buf.seek(0)
+                        resp = HttpResponse(
+                            buf,
+                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
-                        response["Content-Disposition"] = f'attachment; filename="invalid_ids_{selected_table.table_name}.xlsx"'
-    
-                        InvalidRow_wb.save(response)
-    
-                        return response
-    
+                        resp["Content-Disposition"] = f'attachment; filename=f{resultFilename}'
+                        return resp
+
+                    print("Invalid row before update >>",invalid_rows_exsits)
+                    # --- UPDATE BULK DATA
+                    with connection.cursor() as cursor:
+                        for r in Result_rows:          
+
+                            print("Result row >> ",r)
+
+                            columns = [f.field_name for f in fields]
+                            set_clause = ", ".join([f'"{col}" = %s' for col in columns])
+                            print("Set Clause > ",set_clause)
+                            sql = f'UPDATE "{selected_table.table_name}" SET {set_clause} WHERE id = %s'
+
+                            params = [r[c] for c in columns] + [r["id"]]
+                            print("Params's >> ",params )
+                            cursor.execute(sql, params)
+
                     messages.success(request, "Table updated successfully.")
 
     except Exception as e:
+        tb = traceback.format_exc()
+        
+        print(tb)
         print("Error:", (e))
 
     return render(request, 'choose_table.html', {
@@ -1874,6 +2975,9 @@ def choose_table_and_upload(request):
         'sheets':sheets,
         'selected_sheet':Selected_sheet
     })
+
+
+
 
 
 def get_sheet_names(request):
@@ -2057,6 +3161,7 @@ def dashboard_viewdata(request, dashboard_id):
     return render(request, "Dashboard/dashboard_viewdata.html", {
         "dashboard": dashboard
     })
+
 
 def fetch_dashboard_data(request,table_id):
     """Return paginated JSON data for DataTables"""

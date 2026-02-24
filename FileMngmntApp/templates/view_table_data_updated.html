@@ -725,8 +725,72 @@ $(document).ready(function() {
             
             const tableId = "{{ table.id }}";
             
+            // const allColumns=JSON.parse('{{ columns|safe|escapejs }}');
+
             let allColumns = [];
             let selectedColumns = [];
+
+
+            $.ajax({
+                
+                url: `/table_data_datatable/${tableId}/data/`,
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    init: true
+                }),
+                success: function (json) {
+                
+                    console.log("InitData", json);
+                
+                    // Columns from backend
+                    allColumns = json.columns;
+                    allColumns.push("Action");
+                
+                    selectedColumns = [...allColumns];
+                
+                    // Build column selector UI
+                    allColumns.forEach(col => {
+                        $('#columnSelector').append(`
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input column-toggle"
+                                       type="checkbox"
+                                       value="${col}"
+                                       id="chk_${col}"
+                                       checked>
+                                <label class="form-check-label" for="chk_${col}">
+                                    ${col}
+                                </label>
+                            </div>
+                        `);
+                    });
+                
+                    // 🚀 Now initialize DataTable
+                    renderTable();
+                },
+                error: function (xhr) {
+                    console.error("Init failed", xhr.responseText);
+                }
+
+            });
+
+        
+            
+            $('#applyColumns').on('click', function() {
+                        
+                        selectedColumns = $('.column-toggle:checked').map(function() {
+                            return $(this).val();
+                        }).get();
+
+
+                        if ($.fn.DataTable.isDataTable('#dataTable')) {
+                                $('#dataTable').DataTable().clear().destroy();
+                                $('#dataTable thead').empty(); // ✅ important
+                        }
+                        renderTable();
+            });
+
+            
             
             // SET THE EVENT HANDLERS FOR COLUM WISE FILTER DROPDOWN AND TEXT BOX'S 
             setupColWiseFilterDropdownHandlers();
@@ -772,62 +836,14 @@ $(document).ready(function() {
             });
 
             
-            // Fetch column names dynamically first
-            $.getJSON(`/table_data_datatable/${tableId}/data/?length=1`, function(initData) {
-                    
-                    if (initData.data.length == 0) {
-                        $('#dataTable').html('<p>No data found</p>');
-                    }
-                    
-                    allColumns = Object.keys(initData.data[0])
-                    allColumns.push("Action");
-                    
-                    console.log("Column Name :> ", initData.columns);
-                    console.log("Column Name Disp:> ", initData.displayColumn);
-                    console.log("All Columns : ",allColumns)
-
-        
-                    allColumns.forEach(col => {
-                        
-                        //console.log("Column :<> ",col)
-                        $('#columnSelector').append(`
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input column-toggle" type="checkbox" value="${col}" id="chk_${col}" checked>
-                                <label class="form-check-label" for="chk_${col}">${col}</label>
-                            </div>
-                        `);
-
-                    });
-
-        
-                    // Default: all columns selected
-                    selectedColumns = [...allColumns];            
-                    renderTable();
-
-                    // Step 4: When “Apply Columns” clicked → re-render
-                    $('#applyColumns').on('click', function() {
-                        
-                        selectedColumns = $('.column-toggle:checked').map(function() {
-                            return $(this).val();
-                        }).get();
-
-
-                        if ($.fn.DataTable.isDataTable('#dataTable')) {
-                                $('#dataTable').DataTable().clear().destroy();
-                                $('#dataTable thead').empty(); // ✅ important
-                        }
-                        renderTable();
-                    });
-                    
-                
-                
-            });
+            
             
             function renderTable(){
 
+                console.log("Render Table Work !"); 
                 $('#headerRow, #filterRow ,#excelFilterRow').empty();
                     
-                    console.log("Selected Col in Render : ",selectedColumns);
+                    console.log("Selected Col in Render Table : ",selectedColumns);
                     
                     const columns=selectedColumns.map(col => {
                             if (col === "Action") {
@@ -924,12 +940,17 @@ $(document).ready(function() {
                         
                         processing: true,
                         serverSide: true,
+                        
                         ajax:{ 
                             url:`/table_data_datatable/${tableId}/data/`,
+                            type: "POST",
+                            contentType: "application/json",
+
                             data: function(d) {
                                 // Send selected columns to backend
                                 d.selected_columns = selectedColumns.filter(col => col !== "Action");
                                 d.selectedRow = btn_txt === "Show" && window.selectedRowIds ? window.selectedRowIds :'';
+                                return JSON.stringify(d); 
                             },
                             dataSrc: function (json) {
 

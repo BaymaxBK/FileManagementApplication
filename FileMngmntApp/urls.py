@@ -14,6 +14,7 @@ urlpatterns = [
     # ADMIN ROUTES
     path('admin_dashboard/',views.user_admin,name='admin_dashboard'),
     path('create_table/',views.create_custom_table,name='create_table'),
+    path("custom-table/<int:table_id>/alter/",views.alter_table_schema,name="alter_table_schema"),
     path('create_task/',views.create_custom_Tasktable,name="create_task"),
     
     path('create_dashboard/',views.create_statusCount_dashboard,name='create_statuscount_dashboard'),

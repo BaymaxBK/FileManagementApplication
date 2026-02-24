@@ -29,6 +29,18 @@ class customFields(models.Model):
     display_name = models.CharField(max_length=100)  # Original name
     field_name = models.CharField(max_length=100)    # Safe name
     field_type = models.CharField(max_length=50)     # SQL type
+    
+    field_kind = models.CharField(                  # Logical type
+        max_length=20,
+        choices=[
+            ("text", "Text"),
+            ("number", "Number"),
+            ("date", "Date"),
+            ("boolean", "Boolean"),
+        ],
+        default="text"
+    )
+
     max_length = models.PositiveIntegerField(null=True, blank=True)
 
     is_primary_key = models.BooleanField(default=False)  # part of PK (single/composite)
@@ -45,8 +57,69 @@ class customFields(models.Model):
         help_text="Raw SQL for CHECK, e.g. 'age > 0'"
     )
 
+    created_at = models.DateTimeField(
+        auto_now_add=True,null=True,
+        blank=True
+        )
+    
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("table", "field_name")
+        ordering = ["id"]
+
     def __str__(self):
         return f"{self.display_name} ({self.field_type})"
+
+
+class TableSchemaChange(models.Model):
+    table = models.ForeignKey(
+        CustomTable,
+        on_delete=models.CASCADE,
+        related_name="schema_changes"
+    )
+
+    executed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True
+    )
+
+    action = models.CharField(
+        max_length=50,
+        choices=[
+            ("rename", "Rename Column"),
+            ("constraint", "Alter Constraint"),
+            ("add_column", "Add Column"),
+            ("drop_column", "Drop Column"),
+        ]
+    )
+
+    sql_executed = models.TextField()
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(null=True, blank=True)
+
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.table.table_name} | {self.action} | {self.executed_at}"
+
+
+class CompositeUniqueConstraint(models.Model):
+    table = models.ForeignKey(
+        CustomTable,
+        on_delete=models.CASCADE,
+        related_name="composite_uniques"
+    )
+
+    fields = models.ManyToManyField(
+        customFields,
+        related_name="unique_groups"
+    )
+
+    def __str__(self):
+        cols = ", ".join(f.field_name for f in self.fields.all())
+        return f"UNIQUE ({cols})"
 
 class CustomTaskTable(models.Model):
     

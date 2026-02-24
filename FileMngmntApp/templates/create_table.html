@@ -102,7 +102,7 @@
                             </div>
                             
                              <div class="w-50 d-flex justify-content-start border rounded">
-                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
                             </div>
 
                         </div>
@@ -149,7 +149,7 @@
                 console.log(row)
                 row.querySelectorAll('input[name="not_null[]"]').forEach(cb => cb.value = idx);
                 row.querySelectorAll('input[name="unique[]"]').forEach(cb => cb.value = idx);
-                row.querySelectorAll('input[name="composite_pk[]"]').forEach(cb => cb.value = idx);
+                row.querySelectorAll('input[name="composite_unique[]"]').forEach(cb => cb.value = idx);
             // add others if you want to index them too
             });
 
@@ -232,7 +232,7 @@
                         </div>
                         
                 
-                        <div class="col-md-2 maxLengthField-div" style="display:none;">
+                        <div class="col-md-2 maxLengthField-div" style="display:block;">
                             <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
                         </div>
                         
@@ -262,7 +262,7 @@
                             </div>
                             
                              <div class="w-50 d-flex justify-content-start border rounded">
-                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="0"> Composite Unique</label>
                             </div>
 
                         </div>
@@ -364,7 +364,7 @@
                             </div>
                             
                              <div class="w-50 d-flex justify-content-start border rounded">
-                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_pk[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                                <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="0"> Composite Unique</label>
                             </div>
 
                         </div>

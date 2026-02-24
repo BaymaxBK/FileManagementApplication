@@ -20,17 +20,9 @@
                     <div id="collapse{{ table.id }}" class="accordion-collapse collapse">
                         
                         <div class="accordion-body">
-                            <ul class="list-group">
-                                {% for field in table.fields.all %}
-                                    <li class="list-group-item">{{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %} — <code>{{ field.field_name }}</code> : {{ field.field_type }}</li>
-                                {% endfor %}
-                            </ul>
+                            <ul class="list-group py-3">
 
-                             <!-- Drop Table And View Button -->
-                            <div class="d-flex gap-2 justify-content-end text-nowrap">
-                                                                
-                            
-                                <div class="mt-1 insert-update-fields">
+                                <div class="mt-1 insert-update-fields d-flex gap-2 justify-content-end">
                                     <form  class="d-flex align-items-center w-90" method="post" enctype="multipart/form-data" action="{% url 'update_excel_data' table.id %}" onsubmit='return confirm("Are You Sure Want to Update this File data !")'>
                                         {% csrf_token %}
                                         <!-- <label class="form-label" for="update_excel">Update via Excel</label> -->
@@ -53,6 +45,20 @@
                                         
                                     </form>
                                 </div>
+
+                            </ul>
+                            <ul class="list-group">
+                                {% for field in table.fields.all %}
+                                    <li class="list-group-item">{{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %} — <code>{{ field.field_name }}</code> : {{ field.field_type }}</li>
+                                {% endfor %}
+                            </ul>
+
+                             <!-- Drop Table And View Button -->
+                            <div class="d-flex gap-2 justify-content-end text-nowrap">
+                                                                
+                                <!-- <div>
+                                    <a href="{% url 'alter_table_schema' table.id %}" class="btn btn-outline-secondary btn-sm mt-2">⚙️ Edit Table</a>
+                                </div> -->
                                 
                                 <!-- DELETE BUTTON  -->
                                 <form method="post" action="{% url 'drop_table' table.id %}" onsubmit="return confirm('Are you sure you want to delete this table?');">
