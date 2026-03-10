@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load custom_tags %}
+{% load static %}
 
 {% block content %}
         <div class="card shadow p-4">
@@ -8,7 +9,8 @@
             <form method="post">
                 {% csrf_token %}
                 <div class="mb-3">
-                    <label for="table_name" class="form-label">Table Name</label>
+                    <h5 class="py-2" >Table Name</h5>
+                    <!-- <label for="table_name" class="form-label"></label> -->
                     <input type="text" id="table_name" class="form-control" value="{{table.display_name}}" readonly>
                 </div>
 
@@ -16,56 +18,69 @@
 
                      {% for field in fields %}
                         
-                        <li class="list-group-item">{{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %} — <code>{{ field.field_name }}</code> : {{ field.field_type }}</li>
-                     
+                        <!-- <li class="list-group-item">{{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %} — <code>{{ field.field_name }}</code> : {{ field.field_type }}</li> -->
+
                         <div class="row g-2 mb-2 mt-1 align-items-center field-row">
 
-                            <div class="col-md-4">
-                                <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <!-- OLD FILED NAME HIDDEN INPUT -->
+                            <input type="hidden" name="old_field_id[]" value="{{ field.id }}">
+                            <input type="hidden" name="old_field_name[]" value="{{ field.field_name }}">
+                            <input type="hidden" name="old_field_type[]" value="{{ field.field_type }}">
+                        
+                            
+                            <label class="col-md-4">
+                                {{ field.display_name }} {% if field.max_length %} <code>[{{field.max_length}}]</code> {% endif %}: <code>{{ field.field_type }} {% if field.is_not_null %} [NOT NULL] {% endif %} {% if field.is_unique %} [ Unique ] {% endif %} </code>
+                            </label>
+                            <div class="col-md-2">
+                                <input type="text" name="field_name[]" class="form-control" value="{{ field.display_name }}" placeholder="Field Name" required>
                                 <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
                             </div>
 
-                            <div class="col-md-4">
-                                <select name="field_type[]" class="form-select field_type" required>
+                            <div class="col-md-2">
+                                <select name="field_type[]" class="form-select field_type">
                                     <option value="">Select Field Type</option>
-                                    <option value="VARCHAR(255)">Text</option>
-                                    <option value="INTEGER">Number</option>
-                                    <option value="DATE">Date</option>
-                                    <option value="BOOLEAN">Boolean</option>
+                                    <option value="VARCHAR(255)" {% if "VARCHAR" in field.field_type %} selected {% endif %}>Text</option>
+                                    <option value="INTEGER" {% if "INTEGER" in field.field_type %} selected {% endif %}>Number</option>
+                                    <option value="DATE" {% if "DATE" in field.field_type %} selected {% endif %}>Date</option>
+                                    <option value="BOOLEAN" {% if "BOOLEAN" in field.field_type %} selected {% endif %}>Boolean</option>
                                 </select>
                             </div>
 
+                            <!-- is_primary_key is_not_null is_unique default_value -->
                         
-                            <div class="col-md-2 maxLengthField-div" style="display:none;">
-                                <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
+                            <div class="col-md-2 maxLengthField-div" {% if "VARCHAR" in field.field_type %} style="display:block ;" {% else %} style="display:none;" {% endif %}>
+                                <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="{{ field.max_length }}"></intput>
                             </div>
 
                             <div class="col-md-1">
-                                <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
+                                <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" ><i class="bi bi-trash"></i></button>
                                 <button type="button" class="btn btn-outline-secondary btn-sm constraintToggle-btn" >⚙️</button>
                             </div>
 
 
-                            <div  class="flex-center flex-warp gap-1 constraint-row" style="display: none;">
+                            <div  class="flex-center flex-warp gap-1 constraint-row"  style="display:none;">
 
                                 <div class="w-50 d-flex justify-content-start border rounded">
-                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[]" value="0"> NOT NULL</label>
+                                    <input type="hidden" name="not_null[{{ forloop.counter0 }}]" value="0">
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" style="width:1rem; height:1rem;" name="not_null[{{ forloop.counter0 }}]" value="1" {% if field.is_not_null %}checked{% endif %}> NOT NULL</label>
                                 </div>
 
                                 <div class="w-50 d-flex justify-content-start border rounded">
-                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[]" style="width:1rem; height:1rem;" value="0"> UNIQUE</label>
+                                    <input type="hidden" name="unique[{{ forloop.counter0 }}]" value="0">
+                                                                        
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="unique[{{ forloop.counter0 }}]" style="width:1rem; height:1rem;" value="1" {% if field.is_unique %}checked{% endif %}> UNIQUE</label>
                                 </div>
 
                                 <div class="w-50 flex-center">
-                                    <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" placeholder="(optional)" class="form-control">
+                                    <label class="form-label px-2">Default:</label> <input type="text" name="default_value[]" {% if field.default_value %} value="{{field.default_value}}" {% endif %} placeholder="(optional)"  class="form-control" >
                                 </div>
 
                                 <div class="w-50 flex-center">
-                                    <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" placeholder="e.g. age >= 18" class="form-control">
+                                    <label class="form-label px-2">Check:</label> <input type="text" name="check_condition[]" {% if field.check_constraint %} value="{{field.check_constraint}}" {% endif %} placeholder="e.g. age >= 18" class="form-control">
                                 </div>
 
                                  <div class="w-50 d-flex justify-content-start border rounded">
-                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="0"> Composite PK</label>
+                                    <label class="form-label flex-center px-1"><input class="mx-1" type="checkbox" name="composite_unique[]" style="width:1rem; height:1rem;" value="1"> Composite Unique</label>
                                 </div>
 
                             </div>
@@ -77,10 +92,31 @@
                 <div class="mb-3">
                     <button id="addField-id" type="button" class="btn btn-outline-secondary btn-sm" >+ Add Field</button>
                 </div>
+                
+                <h5 class="mt-5 mb-4">Composite Unique Constraints</h5>
 
-                <button type="submit" class="btn btn-primary" id="createBtn">Save Changes</button>
-                <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary ms-2">Back to Dashboard</a>
+                {% for cu in composite_uniques %}
+                <div class="border rounded p-2 mb-5">
+                
+                    <strong>Unique Combination:</strong>
+                
+                    {% for field in cu.fields %}
+                        <span class="badge bg-secondary">{{ field }}</span>
+                    {% endfor %}
+                
+                </div>
+                {% empty %}
+                <p class="text-muted">No composite unique constraints</p>
+                {% endfor %}
+
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'view_tables' %}" class="btn btn-secondary">Back</a>
+                    <button type="submit" class="btn btn-primary ms-2" id="createBtn">Save Changes</button>
+                </div>
             </form>
         </div>
     {% endblock %}
 
+    {% block scripts %}
+        <script src="{% static 'js/edit_table_schema.js' %}"></script>
+    {% endblock %}

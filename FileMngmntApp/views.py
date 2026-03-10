@@ -452,134 +452,466 @@ def create_custom_table(request):
     return render(request, 'create_table.html')
 
 
+def run_sql(sql,fetchone=False,fetchall=False):
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+
+        if fetchone:
+            return cursor.fetchone()
+        if fetchall:
+            return cursor.fetchall()
+        
+def column_exists(db_table, column_name):
+    sql = f"""
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s
+          AND column_name = %s
+        LIMIT 1;
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [db_table, column_name])
+        return cursor.fetchone() is not None
+        
+# EDIT TABLE SCHEMA
+@transaction.atomic
 def alter_table_schema(request, table_id):
-    table = get_object_or_404(CustomTable, id=table_id)
+    table = (
+        CustomTable.objects
+        .prefetch_related(
+            "fields",
+            "composite_uniques__fields"
+        )
+        .get(id=table_id)
+    )
+
+    
+    field_names = list(
+        table.fields.values_list("display_name", flat=True)
+    )
+
+    print("Fields Inside the Table > ",field_names)
+
     fields = list(table.fields.all().order_by("id"))
+    composite_uniques = []
+
+    for cu in table.composite_uniques.all():
+        composite_uniques.append({
+            "id": cu.id,
+            "fields": [f.display_name for f in cu.fields.all()]
+        })
 
     if request.method == "POST":
+        
         sql_log = []
 
-        old_names = request.POST.getlist("old_field_name[]")
-        new_names = request.POST.getlist("new_field_name[]")
-        not_nulls = request.POST.getlist("not_null[]")
-        uniques   = request.POST.getlist("unique[]")
-        defaults  = request.POST.getlist("default_value[]")
-        checks    = request.POST.getlist("check_condition[]")
+         # ---------- EXISTING FIELDS ----------
+        old_field_ids   = request.POST.getlist("old_field_id[]")
+        old_names       = request.POST.getlist("old_field_name[]")
+        old_types       = request.POST.getlist("old_field_type[]")
+        
+        new_names       = request.POST.getlist("field_name[]")
+        new_types       = request.POST.getlist("field_type[]")
+        max_lengths     = request.POST.getlist("max_length[]")        
+        defaults        = request.POST.getlist("default_value[]")
+        checks          = request.POST.getlist("check_condition[]")
+        # composite_idxs  = set(request.POST.getlist("composite_unique[]"))
+        db_table = table.table_name
+        row_count = run_sql(
+            f'SELECT COUNT(*) FROM {db_table};',
+            fetchone=True
+        )[0]
 
-        try:
-            with transaction.atomic():
+        #GET NOT NULL, UNIQUE FROM POST METHOD
+        not_nulls = {}
+        uniques = {}
+
+        for key, value in request.POST.items():
+            if key.startswith("not_null["):
+                index = key[key.find("[")+1:key.find("]")]
+                not_nulls[int(index)] = int(value)
+
+            if key.startswith("unique["):
+                index = key[key.find("[")+1:key.find("]")]
+                uniques[int(index)] = int(value)
+        
+        print("< Unique :   >",uniques)
+        print("< not Null : >",not_nulls)
+
+        # print("< field_id > ",field_id)
+        print("Existing Id's :",old_field_ids)
+        
+        error_msg_exist=False
+        for i, field_id in enumerate(old_field_ids):
+            
+            new_col = sanitize_name(new_names[i].strip())
+            new_col_display=new_names[i].strip()
+            new_col_type=new_types[i]
+
+        
+            print(f"New Display > '{new_col_display}' New Db Name > '{new_col}'")
+
+            # NEW COLUM INSETION 
+            if field_id == "-1":
+
+                # print(f"FIelds Id Not available for index: {i}")
+                if column_exists(db_table, new_col):
+                    error_msg_exist=True
+                    messages.warning(
+                        request,
+                        f"New Colum ' {new_col_display} ' Is Not Created . Duplicate Column Exist in {table.display_name}"
+                    )
+                    continue
+
+                raw_type = new_col_type   # value from HTML select
+                len_ = max_lengths[i]
+
+                if raw_type.startswith("VARCHAR"):
+                    field_kind = "text"
+                    try:
+                        max_len = int(len_) if len_ else 255
+                    except ValueError:
+                        max_len = 255
+                    sql_type = f"VARCHAR({max_len})"
+
+                elif raw_type == "INTEGER":
+                    field_kind = "number"
+                    sql_type = "INTEGER"
+                    max_len = None
+
+                elif raw_type == "DATE":
+                    field_kind = "date"
+                    sql_type = "DATE"
+                    max_len = None
+
+                elif raw_type == "BOOLEAN":
+                    field_kind = "boolean"
+                    sql_type = "BOOLEAN"
+                    max_len = None
+
+                else:
+                    field_kind = "text"
+                    sql_type = "VARCHAR(255)"
+                    max_len = 255
+
+            
+                constraints=[]
+                not_null = False
+                default = None
+                unique= False
+                check= None
+                
+                if not_nulls.get(i) == 1 and row_count > 0 and not defaults[i].strip():
+                    print(f"NOt null Exit of >> {i}")
+                    error_msg_exist = True
+                    messages.warning(
+                        request,
+                        f'Column "{new_col_display}" cannot be NOT NULL because '
+                        f'table "{table.display_name}" already has rows. '
+                        f'Provide a Default Value Or Allow NULL.'
+                    )
+                    continue
+                    
+
+                if uniques.get(i) == 1:
+                    constraints.append("UNIQUE")
+                    unique=True                     
+                    
+                if defaults[i].strip():
+                    constraints.append(f"DEFAULT '{defaults[i].strip()}'")
+                    default =defaults[i].strip()
+
+                if checks[i].strip():
+                    constraints.append(f"CHECK ({checks[i].strip()})")
+                    check=checks[i].strip()
+    
+                field_NameTypeConst_sql=f'"{new_col.strip()}" {sql_type} {" ".join(constraints)}'
+
+                print("Column Name Type Constraint > ",field_NameTypeConst_sql)
+                run_sql(f'''
+                        ALTER TABLE {db_table}
+                        ADD COLUMN {field_NameTypeConst_sql};
+                    ''')
+                
+                customFields.objects.create(
+
+                    table =table, 
+                    display_name =new_col_display.strip(),  # Original name
+                    field_name = new_col,# Safe name
+                    field_kind = field_kind,
+                    field_type = sql_type,
+                    max_length=int(max_len) if "VARCHAR" in sql_type and max_len else None,
+                    is_primary_key=False,
+                    is_not_null=not_null,
+                    is_unique=unique,
+                    default_value=default,
+                    check_constraint=check
+                )
+                continue
+
+            field = customFields.objects.get(id=field_id)
+            # processed_ids.add(field_id)
+
+            old_col = field.field_name
+            old_col_display=field.display_name
+
+        
+            # new_type = new_types[i]
+
+            # 1️⃣ Rename column
+            if old_col_display != new_col_display :
+                if old_col!=new_col and column_exists(db_table, new_col):
+                    error_msg_exist=True
+                    messages.warning(
+                            request,
+                            f'Column "{new_col_display}" already exists in table "{table.display_name}".'
+                    )
+                    continue
+
+                run_sql(f'''
+                    ALTER TABLE {db_table}
+                    RENAME COLUMN "{old_col}" TO "{new_col}";
+                ''')
+                field.field_name = new_col
+                field.display_name = new_col_display
+
+            # # 2️⃣ Change type
+            # if field.field_type != new_type:
+            #     run_sql(f'''
+            #         ALTER TABLE {db_table}
+            #         ALTER COLUMN "{new_col}" TYPE {new_type};
+            #     ''')
+            #     field.field_type = new_type
+
+            # # 3️⃣ Max length
+            # field.max_length = max_lengths[i] or None
+
+            # 4️⃣ Constraints
+            if not_nulls.get(i) == 1 :
+
+                null_count = run_sql(f'''
+                        SELECT COUNT(*) 
+                        FROM {db_table}
+                        WHERE "{new_col}" IS NULL;
+                ''', fetchone=True)[0]
+
+                if null_count > 0:
+                    error_msg_exist=True
+                    messages.warning(
+                        request,
+                        f'Cannot set NOT NULL on "{new_col_display}". '
+                        f'{null_count} existing rows contain NULL values.'
+                    )
+                    field.is_not_null = False
+                else:
+
+                    run_sql(f'''
+                        ALTER TABLE {db_table}
+                        ALTER COLUMN "{new_col}" SET NOT NULL;
+                    ''')
+                    field.is_not_null = True
+
+            else:
+                run_sql(f'''
+                    ALTER TABLE {db_table}
+                    ALTER COLUMN "{new_col}" DROP NOT NULL;
+                ''')
+                field.is_not_null = False
+
+
+            print(f"Index: > {i} New Column for Db> : {new_col} Col From db | {old_col}")
+            if uniques.get(i) == 1 :
                 with connection.cursor() as cursor:
+                    cursor.execute(f'''
+                        SELECT COUNT(*) FROM (
+                            SELECT "{new_col}"
+                            FROM {db_table}
+                            WHERE "{new_col}" IS NOT NULL
+                            GROUP BY "{new_col}"
+                            HAVING COUNT(*) > 1
+                        ) t;
+                    ''')
+                    has_duplicates = cursor.fetchone()[0] > 0
 
-                    for i, field in enumerate(fields):
-                        old = old_names[i]
-                        new = new_names[i]
+                if has_duplicates:
 
-                        # 🔄 RENAME
-                        if old != new:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            RENAME COLUMN "{old}" TO "{new}"
-                            '''
-                            cursor.execute(sql)
-                            sql_log.append(sql)
+                    error_msg_exist=True
+                    messages.warning(
+                        request,
+                        f"UNIQUE not applied to '{new_col_display}' — duplicate values exist"
+                    )
+                    field.is_unique = False
+                else:
+                    if new_col !=old_col:
+                        run_sql(f'''
+                            ALTER TABLE {db_table}
+                            ADD CONSTRAINT {db_table}_{new_col}_unique UNIQUE ("{new_col}");
+                        ''')
+                    field.is_unique = True
+
+            else:
+
+                field.is_unique = False
+                
+            field.default_value = defaults[i] or None
+            field.check_constraint = checks[i] or None
+
+            # FIND EXISTING COLUMN ENTRY
+            
+            field.save()
+
+        # try:
+        #     with transaction.atomic():
+        #         with connection.cursor() as cursor:
+
+        #             for i, field in enumerate(fields):
+        #                 old = old_names[i]
+        #                 new = new_names[i]
+
+        #                 # 🔄 RENAME
+        #                 if old != new:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     RENAME COLUMN "{old}" TO "{new}"
+        #                     '''
+        #                     cursor.execute(sql)
+        #                     sql_log.append(sql)
 
                             
 
-                            field.field_name = new
-                            field.display_name = new
-                            field.save()
+        #                     field.field_name = new
+        #                     field.display_name = new
+        #                     field.save()
 
-                        col = new
+        #                 col = new
 
-                        # 🔒 NOT NULL
-                        if str(i) in not_nulls:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            ALTER COLUMN "{col}" SET NOT NULL
-                            '''
-                        else:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            ALTER COLUMN "{col}" DROP NOT NULL
-                            '''
-                        cursor.execute(sql)
-                        sql_log.append(sql)
+        #                 # 🔒 NOT NULL
+        #                 if str(i) in not_nulls:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     ALTER COLUMN "{col}" SET NOT NULL
+        #                     '''
+        #                 else:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     ALTER COLUMN "{col}" DROP NOT NULL
+        #                     '''
+        #                 cursor.execute(sql)
+        #                 sql_log.append(sql)
 
-                        # ⭐ UNIQUE
-                        constraint = f"{table.table_name}_{col}_unique"
-                        if str(i) in uniques:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            ADD CONSTRAINT IF NOT EXISTS {constraint}
-                            UNIQUE ("{col}")
-                            '''
-                        else:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            DROP CONSTRAINT IF EXISTS {constraint}
-                            '''
-                        cursor.execute(sql)
-                        sql_log.append(sql)
+        #                 # ⭐ UNIQUE
+        #                 constraint = f"{table.table_name}_{col}_unique"
+        #                 if str(i) in uniques:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     ADD CONSTRAINT IF NOT EXISTS {constraint}
+        #                     UNIQUE ("{col}")
+        #                     '''
+        #                 else:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     DROP CONSTRAINT IF EXISTS {constraint}
+        #                     '''
+        #                 cursor.execute(sql)
+        #                 sql_log.append(sql)
 
-                        # 🎯 DEFAULT
-                        if defaults[i]:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            ALTER COLUMN "{col}" SET DEFAULT '{defaults[i]}'
-                            '''
-                        else:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            ALTER COLUMN "{col}" DROP DEFAULT
-                            '''
-                        cursor.execute(sql)
-                        sql_log.append(sql)
+        #                 # 🎯 DEFAULT
+        #                 if defaults[i]:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     ALTER COLUMN "{col}" SET DEFAULT '{defaults[i]}'
+        #                     '''
+        #                 else:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     ALTER COLUMN "{col}" DROP DEFAULT
+        #                     '''
+        #                 cursor.execute(sql)
+        #                 sql_log.append(sql)
 
-                        # 🔍 CHECK
-                        check_name = f"{table.table_name}_{col}_check"
-                        if checks[i]:
-                            sql = f'''
-                            ALTER TABLE "{table.table_name}"
-                            DROP CONSTRAINT IF EXISTS {check_name},
-                            ADD CONSTRAINT {check_name}
-                            CHECK ({checks[i]})
-                            '''
-                            cursor.execute(sql)
-                            sql_log.append(sql)
+        #                 # 🔍 CHECK
+        #                 check_name = f"{table.table_name}_{col}_check"
+        #                 if checks[i]:
+        #                     sql = f'''
+        #                     ALTER TABLE "{table.table_name}"
+        #                     DROP CONSTRAINT IF EXISTS {check_name},
+        #                     ADD CONSTRAINT {check_name}
+        #                     CHECK ({checks[i]})
+        #                     '''
+        #                     cursor.execute(sql)
+        #                     sql_log.append(sql)
 
-                        # update metadata
-                        field.is_not_null = str(i) in not_nulls
-                        field.is_unique = str(i) in uniques
-                        field.default_value = defaults[i] or None
-                        field.check_constraint = checks[i] or None
-                        field.save()
+        #                 # update metadata
+        #                 field.is_not_null = str(i) in not_nulls
+        #                 field.is_unique = str(i) in uniques
+        #                 field.default_value = defaults[i] or None
+        #                 field.check_constraint = checks[i] or None
+        #                 field.save()
 
-                TableSchemaChange.objects.create(
-                    table=table,
-                    executed_by=request.user,
-                    sql_executed="\n".join(sql_log)
-                )
+        #         TableSchemaChange.objects.create(
+        #             table=table,
+        #             executed_by=request.user,
+        #             sql_executed="\n".join(sql_log)
+        #         )
 
-            return redirect("edit_custom_table", table.id)
+        #     return redirect("edit_custom_table", table.id)
 
-        except Exception as e:
-            TableSchemaChange.objects.create(
-                table=table,
-                executed_by=request.user,
-                sql_executed="\n".join(sql_log),
-                success=False,
-                error_message=str(e)
+        # except Exception as e:
+        #     TableSchemaChange.objects.create(
+        #         table=table,
+        #         executed_by=request.user,
+        #         sql_executed="\n".join(sql_log),
+        #         success=False,
+        #         error_message=str(e)
+        #     )
+        #     raise
+        table = (
+            CustomTable.objects
+            .prefetch_related(
+                "fields",
+                "composite_uniques__fields"
             )
-            raise
+            .get(id=table_id)
+        )
+
+        fields = list(table.fields.all().order_by("id"))
+        if not error_msg_exist:
+            messages.success(request, "Table schema updated successfully")
 
     return render(
         request,
         "custom_table/alter_schema.html",
         {
             "table": table,
-            "fields": fields
+            "fields": fields,
+            "composite_uniques": composite_uniques
         }
     )
+
+@require_POST
+def delete_table_field(request, field_id):
+    field = get_object_or_404(customFields, id=field_id)
+    table_obj = field.table
+
+    db_table = table_obj.table_name
+    col_name = field.field_name
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f'''
+                ALTER TABLE {db_table}
+                DROP COLUMN "{col_name}";
+            ''')
+
+        field.delete()
+
+        return JsonResponse({"success": True})
+
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
 
 
 @login_required
@@ -1087,7 +1419,7 @@ def normalize_value(val, field):
 
     return val
 
-# ADMIN DATA INSERT AND UPLOADE
+# ADMIN DATA INSERT AND UPLOAD
 #>
 def update_excel_data(request, table_id):
 
@@ -1108,6 +1440,8 @@ def update_excel_data(request, table_id):
         DisplyFldAndsqlFld_lookup=dict(zip(display_fileds,sql_fileds))
         print("Fields Dict :> ",DisplyFldAndsqlFld_lookup)
 
+        DbToDiplayFields_lookup=dict(zip(sql_fileds,display_fileds))
+
         try:
             # UPDATE THE FILE DATA
             if request.POST.get('UpdateInsert') == "Update":
@@ -1119,7 +1453,7 @@ def update_excel_data(request, table_id):
                 
                 if Missing_column:
 
-                    messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
+                    messages.warning(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
                     return redirect('view_tables') 
                 
                 table=CustomTable.objects.get(id=table_id)
@@ -1223,15 +1557,15 @@ def update_excel_data(request, table_id):
                                 unique_error = True
                                 invalid_rows_exsits = True
                                 unique_error_msg.append(f"{f.display_name} already exists")
-                                continue
+                                
 
                         uniqueConCols_uniqVals[f.field_name].add(value)
                     
                     
                     # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+                    composite_error = False
                     for group in composite_unique_groups:
 
-                        composite_error = False
                         group_fields = [f.field_name for f in group.fields.all()]
                         group_field_objs = {f.field_name: f for f in fields}
 
@@ -1246,10 +1580,7 @@ def update_excel_data(request, table_id):
                         # VALIDE INNED COMBINATION UNIUQUE CHECK
                         if group_key in seen_group_values[group_key_name]:
                             
-                            # Result_rows.append({
-                            #             **row.to_dict(),
-                            #             "errors": f"Duplicate combination in file: ({group_key_name})"
-                            #     })
+                            
                             unique_error_msg.append(f"Duplicate combination in file: ({group_key_name})")
                             
                             invalid_rows_exsits=True
@@ -1280,11 +1611,7 @@ def update_excel_data(request, table_id):
                                 invalid_rows_exsits=True
                                 composite_error = True
                                 unique_error_msg.append(f"Combination ({col_names}) must be unique")
-                                # Result_rows.append({
-                                #         **row.to_dict(),
-                                #         "errors": f"Combination ({col_names}) must be unique"
-                                # })
-                                break
+                                
 
                         seen_group_values[group_key_name].add(group_key)
 
@@ -1296,13 +1623,24 @@ def update_excel_data(request, table_id):
                     
                     Result_rows.append(row_dict)
 
-
+                #invalidrow>update
                 if invalid_rows_exsits:
 
                     print("Invalid Row Exist >> ", invalid_rows_exsits)
                     wb = Workbook()
                     ws = wb.active
-                    ws.append(list(Result_rows[0].keys()))
+                    resultFilename=f"{table.display_name} Result.xlsx"
+
+                    resultColums= list(Result_rows[0].keys())
+
+                    result_headers=[col for col in resultColums if col != 'errors' ]
+                    
+                    if sql_fileds[0] in resultColums:
+                        result_headers=[ DbToDiplayFields_lookup.get(col,col) for col in resultColums ]
+                    
+                    result_headers= result_headers + ["Error Info"]
+                    
+                    ws.append(result_headers)
                     for r in Result_rows:
                         ws.append(list(r.values()))
         
@@ -1313,7 +1651,7 @@ def update_excel_data(request, table_id):
                         buf,
                         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
-                    resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+                    resp["Content-Disposition"] = f'attachment; filename={resultFilename}'
                     return resp
 
                 print("Invalid row before update >>",invalid_rows_exsits)
@@ -1338,14 +1676,14 @@ def update_excel_data(request, table_id):
             #INSERT THE FILE DATA
             else:
                 
-                print("File Insertion is Processing !")
+                print("< Admin File Insertion is Processing >")
                 df = pd.read_excel(file_path,keep_default_na=False)
                 
                 Missing_column=[col for col in display_fileds if col != "id"  and col not in df.columns]
                 
                 if Missing_column:
-                    messages.error(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
-                    return redirect('view_tables') 
+                    messages.warning(request, f"Missing Requried Column's: {', '.join(Missing_column)}")
+                    return redirect('view_tables')
                 
                 table=CustomTable.objects.get(id=table_id)
 
@@ -1363,9 +1701,10 @@ def update_excel_data(request, table_id):
                 db_table_name = table.table_name
                 uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
                 
-                valid_rows, invalid_rows = [], []
+                valid_rows , Result_rows  = [], []
 
-                Result_rows=[]
+
+                Insertion_invalid_rowExist=False
 
                 for idx, row in df.iterrows():
                     
@@ -1400,14 +1739,16 @@ def update_excel_data(request, table_id):
                         row_dict[f.field_name] = val
         
                     if error_msgs:
-                        invalid_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
 
+                        Insertion_invalid_rowExist = True
                         Result_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
                         continue
                     
                     # Check unique columns manually (to avoid DB errors first)
                     
                     unique_error = False
+                    unique_error_msg = []
+
                     for f in fields.filter(is_unique=True):
                         
                         print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
@@ -1416,9 +1757,8 @@ def update_excel_data(request, table_id):
                         if value in uniqueConCols_uniqVals[f.field_name]:
                             
                             unique_error = True
-
-                            Result_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique in file"})                            
-                            invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique in file"})
+                            unique_error_msg.append(f"{f.display_name} not unique in File")
+                            # Result_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique in file"})                            
                             break
 
                         with connection.cursor() as cur:
@@ -1428,17 +1768,22 @@ def update_excel_data(request, table_id):
                                 (value,)
                             )
                             if cur.fetchone():
-                                invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
+                                unique_error = True
+                                unique_error_msg.append(f"{f.display_name} not unique in DB")
+                                # invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
                                 break
 
                         uniqueConCols_uniqVals[f.field_name].add(value)
                     
                     
                     # --- COMPOSTE UNIQUE CHECK DB AND INTERNAL FILE
+
+                    composite_error = False
                     for group in composite_unique_groups:
 
-                        composite_error = False
+                        
                         group_fields = [f.field_name for f in group.fields.all()]
+
                         group_field_objs = {f.field_name: f for f in fields}
 
                         group_key_name = ",".join(group_fields)
@@ -1448,20 +1793,17 @@ def update_excel_data(request, table_id):
                             continue
                         
                         group_key = tuple(row_dict[col] for col in group_fields)
-                        
+
+                        # print("< Group Col Value > ",group_key)
+                        # print("< Seen Group In FIle >",seen_group_values)
+                        # print(f"Condition :{group_key in seen_group_values[group_key_name]}")
+
                         # VALIDE INNED COMBINATION UNIUQUE CHECK
                         if group_key in seen_group_values[group_key_name]:
-                            invalid_rows.append({
-                                **row.to_dict(),
-                                "errors": f"Duplicate combination in file: ({group_key_name})"
-                            })
-
-                            Result_rows.append({
-                                **row.to_dict(),
-                                "errors": f"Duplicate combination in file: ({group_key_name})"
-                            })
+                            
+                            unique_error_msg.append(f"Duplicate combination in File: ({group_key_name})")
                             composite_error = True
-                            break
+                            continue
 
 
                         where_clause = " AND ".join([f'"{col}" = %s' for col in group_fields])
@@ -1480,27 +1822,54 @@ def update_excel_data(request, table_id):
                             )
 
                             if cur.fetchone():
+
+                                # print({**row.to_dict()})
+                                composite_error = True
                                 col_names = ", ".join(group_fields)
-                                invalid_rows.append({
-                                    **row.to_dict(),
-                                    "errors": f"Combination ({col_names}) must be unique"
-                                })
+
+                                seen_group_values[group_key_name].add(group_key)                                
+                                unique_error_msg.append(f"Duplicate {col_names} in DB ")
                                 break
 
                         seen_group_values[group_key_name].add(group_key)
 
                     if composite_error or unique_error:
-                            continue
+                        
+                        Insertion_invalid_rowExist=True
+                        Result_rows.append({
+                                **row.to_dict(),
+                                "errors": ", ".join(unique_error_msg)
+                        })
+
+                        continue
                     
                     valid_rows.append(row_dict)
-                    Result_rows.append(row_dict)
+                    Result_rows.append({**row.to_dict()})    
+                    
                 
                 # RETURN INVALID ROWS TO THE USER
-                if invalid_rows:
+
+                # invalidrow>
+                print(f"INvaldi row Exist status > {Insertion_invalid_rowExist}")
+                if Insertion_invalid_rowExist:
 
                     wb = Workbook()
                     ws = wb.active
-                    ws.append(list(Result_rows[0].keys()))
+
+                    resultFilename=f"{table.display_name} Result.xlsx"
+
+                    resultColums=list(Result_rows[0].keys())
+                    if "errors" not in resultColums:
+                        resultColums = resultColums + ["Errors"]
+
+                    # result_headers=[col for col in resultColums if col != 'errors' ] 
+
+                    # if resultColums[1] in DbToDiplayFields_lookup:
+                        # result_headers=[DbToDiplayFields_lookup[col] for col in resultColums if col != 'errors' and col!="id" ]
+                    # 
+                    # result_headers = result_headers + ["Error Info"]
+
+                    ws.append( resultColums )
                     for r in Result_rows:
                         ws.append(list(r.values()))
         
@@ -1511,13 +1880,15 @@ def update_excel_data(request, table_id):
                         buf,
                         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
-                    resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+                    resp["Content-Disposition"] = f'attachment; filename={resultFilename}'
                     return resp
 
                 
                 if valid_rows:
 
                     columns = [f.field_name for f in fields]
+                    print("Admin Insertion Column in DB ",columns)
+                    print("Display and Sql field dictioary ",DisplyFldAndsqlFld_lookup)
                     values_sql = ",".join(
                         [
                             "(" + ",".join(["%s"] * len(columns)) + ")"
@@ -2491,7 +2862,7 @@ def choose_table_and_upload(request):
             if not Selected_sheet:
                 Selected_sheet=sheets[0]
 
-            Active_sheet =wb[Selected_sheet] 
+            Active_sheet = wb[Selected_sheet] 
             # Excel headers
             headers = [str(cell.value).strip() if cell.value else "" 
                        for cell in next(Active_sheet.iter_rows(min_row=1, max_row=1))]
@@ -2527,7 +2898,8 @@ def choose_table_and_upload(request):
 
                 # --//----------------- INSERTION -----------------//--
                 if InsertOrupdateType == "Insert":
-
+                    
+                    user_insert_invalidrow_exist = False
                     print("File Insertion is Processing !")
                     df = pd.read_excel(file_path,sheet_name=Selected_sheet,keep_default_na=False)
 
@@ -2547,10 +2919,9 @@ def choose_table_and_upload(request):
                     db_table_name = table.table_name
                     uniqueConCols_uniqVals= {f.field_name:set() for f in fields.filter(is_unique=True)}
 
-                    valid_rows, invalid_rows = [], []
+                    valid_rows, Result_rows = [], []
 
-                    Result_rows=[]
-
+                
                     for idx, row in df.iterrows():
 
                         row_dict = {}
@@ -2586,26 +2957,27 @@ def choose_table_and_upload(request):
                             row_dict[f.field_name] = val
 
                         if error_msgs:
-                            invalid_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
 
-                            Result_rows.append({**row.to_dict(), "errors": "; ".join(error_msgs)})
+                            user_insert_invalidrow_exist=True
+                            Result_rows.append({**row.to_dict(), "Errors Info": "; ".join(error_msgs)})
                             continue
                         
                         # Check unique columns manually (to avoid DB errors first)
 
                         unique_error = False
+                        userinsert_unique_error_msg=[]
                         for f in fields.filter(is_unique=True):
-
+                            
+                            
                             print("UNique condst col dictionary : ",uniqueConCols_uniqVals)
 
                             value = normalize_value(row_dict[f.field_name], f)
                             if value in uniqueConCols_uniqVals[f.field_name]:
 
                                 unique_error = True
+                                userinsert_unique_error_msg.append(f"' {f.display_name} ' not unique in file")
 
-                                Result_rows.append({**row.to_dict(), "errors": f"' {f.display_name} ' not unique in file"})                            
-                                invalid_rows.append({**row.to_dict(), "errors": f"' {f.display_name} '  not unique in file"})
-                                break
+                                continue
 
                             with connection.cursor() as cur:
 
@@ -2614,10 +2986,11 @@ def choose_table_and_upload(request):
                                     (value,)
                                 )
                                 if cur.fetchone():
-                                    invalid_rows.append({**row.to_dict(), "errors": f"{f.display_name} not unique"})
-                                    break
+                                    userinsert_unique_error_msg.append(f"{f.display_name} not unique")
+                                    
 
                             uniqueConCols_uniqVals[f.field_name].add(value)
+                            
 
                         
                         composite_error = False
@@ -2639,15 +3012,10 @@ def choose_table_and_upload(request):
 
                             # VALIDE INNED COMBINATION UNIUQUE CHECK
                             if group_key in seen_group_values[group_key_name]:
-                                invalid_rows.append({
-                                    **row.to_dict(),
-                                    "errors": f"Duplicate combination in file: ( {DisplayfieldsForResult} )"
-                                })
-
-                                Result_rows.append({
-                                    **row.to_dict(),
-                                    "errors": f"Duplicate combination in file: ( {DisplayfieldsForResult} )"
-                                })
+                            
+                                userinsert_unique_error_msg.append(
+                                    f"Duplicate combination in file: ( {DisplayfieldsForResult} )"
+                                )
                                 composite_error = True
                                 break
 
@@ -2668,34 +3036,42 @@ def choose_table_and_upload(request):
                                 )
 
                                 if cur.fetchone():
+
+                                    composite_error = True
                                     col_names = ", ".join(group_fields)
-                                    invalid_rows.append({
-                                        **row.to_dict(),
-                                        "errors": f"Combination ({col_names}) must be unique"
-                                    })
+                                    userinsert_unique_error_msg.append(
+                                        f"Combination ({col_names}) must be unique"
+                                    )
                                     break
 
                             seen_group_values[group_key_name].add(group_key)
 
                         if composite_error or unique_error:
+                                
+                                user_insert_invalidrow_exist=True
+                                Result_rows.append({**row.to_dict(),
+                                        "Errors Info": f'{", ".join(userinsert_unique_error_msg)}'
+                                })
                                 continue
                             
                         valid_rows.append(row_dict)
-                        Result_rows.append(row_dict)
+                        Result_rows.append({**row.to_dict(),"Errors Info": ""})
 
                     # RETURN INVALID ROWS TO THE USER
-                    if invalid_rows:
+                    if user_insert_invalidrow_exist:
 
                         wb = Workbook()
                         ws = wb.active
+
+                        UserInsertResultFileName=f"{selected_table.display_name} Result.xlsx"
                         print("Result Row ",list(Result_rows[0].keys()))
                         resultColums= list(Result_rows[0].keys())
-                        result_headers=[col for col in resultColums if col != 'errors' ] 
+                        result_headers=[col for col in resultColums ] 
 
                         if resultColums[1] in DbToDiplayFields_lookup:
-                            result_headers=[DbToDiplayFields_lookup[col] for col in resultColums if col != 'errors' ]
+                            result_headers=[DbToDiplayFields_lookup.get(col,col) for col in resultColums ]
                         
-                        result_headers=result_headers + ["Error Info"]
+                        result_headers=result_headers
 
                         ws.append(result_headers)
                         for r in Result_rows:
@@ -2708,7 +3084,7 @@ def choose_table_and_upload(request):
                             buf,
                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
-                        resp["Content-Disposition"] = 'attachment; filename="invalid_rows.xlsx"'
+                        resp["Content-Disposition"] = f'attachment; filename={UserInsertResultFileName}'
                         return resp
 
 
@@ -2937,7 +3313,7 @@ def choose_table_and_upload(request):
                             buf,
                             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
-                        resp["Content-Disposition"] = f'attachment; filename=f{resultFilename}'
+                        resp["Content-Disposition"] = f'attachment; filename={resultFilename}'
                         return resp
 
                     print("Invalid row before update >>",invalid_rows_exsits)
