@@ -1,0 +1,500 @@
+
+{% extends "base.html" %}
+{% block title %} Excel Range Selector {% endblock %}
+
+
+{% block styles %}
+    <style>
+        #excelTable {
+            width: 100%;
+            height: 500px;
+            margin-top: 20px;
+        }
+
+
+        #previewTable  {
+            border: 2px solid #999;
+            padding: 6px 10px;
+        }
+
+    
+        /* PRIVEW SECTION SCROLL CSS*/
+        .table-scroll {
+            width: 100%;
+            overflow-x: auto;   /* ✅ horizontal scroll */
+            margin-top: 10px;
+        }
+
+        .table-scroll table {
+            min-width: 600px ;   /* adjust based on your data */
+            border-collapse: collapse;
+        }
+        
+        #table1Box, #table2Box {
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+    </style>
+{% endblock %}
+
+
+
+{% block content %}
+
+<h3>SPIR Template Convertion</h3>
+
+<div class="d-flex">
+        <label class="text-nowrap p-2 border mx-3 rounded">SPIR Form</label>
+        <input type="file" id="fileInput" class="form-control">
+</div>
+<hr>
+
+<div class="container">
+    <h3 class="text-center mt-4">Table Selection</h3>
+
+    <!-- USER SELECT TABLE RANGE -->
+    <div id="rangeContainer" class="row justify-content-center gap-3">
+
+        <div id="table1Box" class="col-md-5 border border-secondary p-2 rounded">
+            <h5>Vertical Table</h5>
+
+            <label>Start Cell</label>
+            <input type="text" id="t1_start" class="form-control">
+
+            <label class="mt-2">End Cell</label>
+            <input type="text" id="t1_end" class="form-control">
+        </div>
+
+        <div id="table2Box" class="col-md-5 border border-secondary p-2 rounded">
+            <h5>Horizontal Table</h5>
+
+            <label>Start Cell</label>
+            <input type="text" id="t2_start" class="form-control">
+
+            <label class="mt-2">End Cell</label>
+            <input type="text" id="t2_end" class="form-control">
+        </div>
+
+    </div>
+
+</div>
+
+
+<div id="previewTable" class="mt-5 d-none border rounded">
+    
+</div>
+
+
+<div class="text-end">
+    <p class="py-3"><b>Active Table :</b> <code> <span id="activeTable"> No Selected </span> </code></p>
+    <button id="setRangeBtn" class="btn btn-success mb-2">Set Range</button>
+    <button id="previewBtn" class="btn btn-primary mb-2" disabled>Preview Header</button>
+</div>
+
+<h3 class="mt-5">Excel Range Selection</h3>
+
+<!--  HANDSONTABLE  -->
+<div class="table-container">
+    <div id="excelTable" class="mb-5 border" ></div>
+</div>
+
+{{ table_data|json_script:"table-data" }}
+
+{% endblock %}
+
+
+{% block scripts %}
+
+<script>
+$(document).ready(function () {
+
+    let hot = null;
+    let selectedRangeTemp = null;
+    let activeTable = null;
+    let currentPayload = null;
+
+    // RANGE TABLE SELECTION
+    $("#table1Box").click(function () {
+        activeTable = "Vertical Table";
+        
+        // Highlight active
+        $("#table1Box")
+            .addClass("border-success border-2")
+            .removeClass("border-secondary");
+
+        $("#table2Box")
+            .removeClass("border-success border-2")
+            .addClass("border-secondary");
+
+        $("#activeTable").text(activeTable);
+            
+    });
+
+
+    $("#table2Box").click(function () {
+        
+        activeTable = "Horizontal Table";
+    
+        $("#table2Box")
+        .addClass("border-success border-2")
+        .removeClass("border-secondary");
+
+        $("#table1Box")
+            .removeClass("border-success border-2")
+            .addClass("border-secondary");
+
+        $("#activeTable").text(activeTable);
+        
+    
+    });
+
+    // CHECK FOR BOTH THE TABLES RANGE ARE FILLED
+    
+    function checkPreviewReady() {
+
+        let t1_start = $("#t1_start").val();
+        let t1_end = $("#t1_end").val();
+
+        let t2_start = $("#t2_start").val();
+        let t2_end = $("#t2_end").val();
+
+        if (t1_start && t1_end && t2_start && t2_end) {
+            $("#previewBtn").prop("disabled", false);
+        } else {
+            $("#previewBtn").prop("disabled", true);
+        }
+    }
+
+
+    $("#t1_start, #t1_end, #t2_start, #t2_end").on("input", function () {
+            checkPreviewReady();
+    });
+
+    //  Upload Excel via AJAX
+    $("#fileInput").on("change", function () {
+
+        let file = $("#fileInput")[0].files[0];
+    
+        if (!file) {
+            alert("Please select a file");
+            return;
+        }
+
+        let formData = new FormData();
+        formData.append("file", file);
+
+        // $("#excelTable").html("Loading Excel...");
+
+        $.ajax({
+            url: "/spir_file_upload/",
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            headers: {
+                "X-CSRFToken": $("meta[name='csrf-token']").attr("content")
+            },
+            success: function (res) {
+
+                if (res.status === "success") {
+
+                    //  Initialize Handsontable
+                    if (hot) {
+                        hot.destroy();
+                    }
+
+                    hot = new Handsontable(document.getElementById('excelTable'), {
+                        data: res.data,
+                        rowHeaders: true,
+                        colHeaders: true,
+                        licenseKey: 'non-commercial-and-evaluation',
+                        width: '100%',      
+                        height: 600,       
+                                        
+                        stretchH: 'none',
+                        afterSelection: function (r1, c1, r2, c2) {
+
+                            selectedRangeTemp = { r1, c1, r2, c2 };
+                            console.log("Range selected but not applied yet");
+                            
+                        }
+                    });
+
+                } else {
+                    alert("Upload failed");
+                }
+            }
+        });
+    });
+
+
+    // SET RANGE BUTTON FOR TABLES
+    $("#setRangeBtn").click(function () {
+
+            if (!activeTable) {
+                alert("Select Table 1 or Table 2 first!");
+                return;
+            }
+        
+            if (!selectedRangeTemp) {
+                alert("Select a range in table first!");
+                return;
+            }
+        
+            function colToLetter(col) {
+
+                    let letter = "";
+                    while (col >= 0) {
+                        letter = String.fromCharCode((col % 26) + 65) + letter;
+                        col = Math.floor(col / 26) - 1;
+                    }
+                    return letter;
+            }
+        
+            let { r1, c1, r2, c2 } = selectedRangeTemp;
+        
+            let startCell = colToLetter(Math.min(c1, c2)) + (Math.min(r1, r2) + 1);
+            let endCell = colToLetter(Math.max(c1, c2)) + (Math.max(r1, r2) + 1);
+        
+            if (activeTable === "Vertical Table") {
+                $("#t1_start").val(startCell);
+                $("#t1_end").val(endCell);
+            }
+        
+            if (activeTable === "Horizontal Table") {
+                $("#t2_start").val(startCell);
+                $("#t2_end").val(endCell);
+            }
+        
+            checkPreviewReady();
+    });
+
+    //CELL TO INDEX CONVERTION .
+    function cellToIndex(cell) {
+        
+        let col = cell.match(/[A-Z]+/)[0];
+        let row = parseInt(cell.match(/[0-9]+/)[0]);
+
+        let colIndex = 0;
+
+        for (let i = 0; i < col.length; i++) {
+            colIndex = colIndex * 26 + (col.charCodeAt(i) - 64);
+        }
+
+        return {
+            row: row - 1,
+            col: colIndex -1
+        };
+    }
+
+    function buildTable(headers, rows) {
+
+        
+        let html = `<div class="table-scroll">
+                        <table class='table table-bordered'>
+                            <thead><tr>`;
+        
+        $.each(headers, function (i, h) {
+            html += "<th>" + (h || "") + "</th>";
+        });
+    
+        html += "</tr></thead><tbody>";
+        
+        // $.each(rows, function (i, row) {
+        //     html += "<tr>";
+            
+        //     $.each(row, function (j, cell) {
+        //         html += "<td>" + (cell || "") + "</td>";
+        //     });
+        
+        //     html += "</tr>";
+        // });
+    
+        html += "</tbody></table></div>";
+    
+        return html;
+    }
+
+
+
+    //  PREIVEW SELECTED RANGE FOR HEADER'S
+    $("#previewBtn").click(function () {
+
+        let t1_start = $("#t1_start").val();
+        let t1_end = $("#t1_end").val();
+
+        let t2_start = $("#t2_start").val();
+        let t2_end = $("#t2_end").val();
+
+        // 🔒 Safety check (optional)
+        if (!t1_start || !t1_end || !t2_start || !t2_end) {
+            alert("Both table ranges are required!");
+            return;
+        }
+
+        // 🔄 Convert to index
+        let t1s = cellToIndex(t1_start);
+        let t1e = cellToIndex(t1_end);
+        
+        let t2s = cellToIndex(t2_start);
+        let t2e = cellToIndex(t2_end);
+
+        // 📦 Payload
+        let payload = {
+            table1: {
+                startRow: t1s.row,
+                endRow: t1e.row,
+                startCol: t1s.col,
+                endCol: t1e.col
+            },
+            table2: {
+                startRow: t2s.row,
+                endRow: t2e.row,
+                startCol: t2s.col,
+                endCol: t2e.col
+            },
+            "action": "preview" 
+        };
+        
+        currentPayload = payload;
+
+        $("#previewTable").html("");
+
+        $.ajax({
+            url: "/spir_preview/",
+            type: "POST",
+            contentType: "application/json",
+            headers: {
+                "X-CSRFToken": $("meta[name='csrf-token']").attr("content")
+            },
+            data: JSON.stringify(currentPayload),
+
+            success: function (res) {
+                
+                if (res.mode === "preview") {
+
+                    $("#previewTable").removeClass("d-none");
+                    $("#previewTable").addClass("border-dark border-2 shadow-lg");
+
+
+                    console.log("Success response !");
+                    let html = `<h3 class="text-primary mb-5"> Headers Preview </h3><h5>Vertical Table</h5>`;
+                    html += buildTable(res.Vertical_table_headers, []);
+
+                    html += "<h5 class='mt-3'>Horizontal Table</h5>";
+                    html += buildTable(res.Horizontal_table_headers, []);
+
+
+                    html += `
+                        <div class="confirmBtnDiv text-end">
+                        <button id="confirmBtn" class="btn btn-success mt-3">
+                            <span id="btnText">Confirm & Process</span>
+                            <span id="btnSpinner" class="spinner-border spinner-border-sm ms-2 d-none"></span>
+                        </button>
+                        </div>
+                    `;
+
+                    $("#previewTable").html(html);
+                }
+
+                
+
+
+            },
+            error: function(xhr){
+                console.log(" failed response !");
+                let res = JSON.parse(xhr.responseText);
+                alert(`Error Info : ${res.message}`);
+            }
+        });
+
+    });
+
+    // CONFIRM AND PROCESS BUTTON
+    $(document).on("click", "#confirmBtn", function () {
+
+            if (!currentPayload) {
+                alert("No data to process!");
+                return;
+            }
+            
+            let btn = $(this);
+
+            // DISBALE ONCE USED CLICKED
+            btn.prop("disabled", true)
+            $("#btnText").text("Processing...");
+            $("#btnSpinner").removeClass("d-none");
+
+            
+            // create form dynamically
+            let form = $('<form>', {
+                method: "POST",
+                action: "/spir_preview/"
+            });
+        
+            form.append($('<input>', {
+                type: "hidden",
+                name: "payload",
+                value: JSON.stringify({
+                    table1: currentPayload.table1,
+                    table2: currentPayload.table2,
+                    action: "process"
+                })
+            }));
+        
+            form.append($('<input>', {
+                type: "hidden",
+                name: "csrfmiddlewaretoken",
+                value: $("meta[name='csrf-token']").attr("content")
+            }));
+        
+            $("body").append(form);
+             setTimeout(() => {
+                    form.submit();   
+             }, 300);
+        
+             /*$.ajax({
+                url: "/spir_preview/",
+                type: "POST",
+                contentType: "application/json",
+                headers: {
+                    "X-CSRFToken": $("meta[name='csrf-token']").attr("content")
+                },
+                data: JSON.stringify({
+                    table1: currentPayload.table1,
+                    table2: currentPayload.table2,
+                    action: "process"
+                }),
+            
+                success: function (res) {
+                    $('#confirmBtn').text("Done");
+                    $("#previewTable").append(`
+                        <div class="d-flex flex-column justify-content-center align-items-center mt-5">
+                            <h5>Processing Complete ✅</h5>
+                            <a href="${res.download_url}" 
+                               class="btn btn-primary mt-2" 
+                               download>
+                               Download File
+                            </a>
+                        </div>
+                    `);
+                },
+            
+                error: function (xhr) {
+                    let res = JSON.parse(xhr.responseText);
+                    alert(res.message);
+                    btn.prop("disabled", false).text("Confirm & Process");
+                }
+                
+            });*/
+            btn.text("Completed");
+
+
+});
+
+
+});
+</script>
+
+{% endblock %}

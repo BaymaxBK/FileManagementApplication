@@ -13,6 +13,8 @@ from django.http import HttpResponseForbidden
 from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,\
 CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn,CompositeUniqueConstraint,TableSchemaChange
 import traceback
+import uuid
+import numbers
 import re
 import os
 from django.views.decorators.csrf import csrf_exempt
@@ -27,6 +29,14 @@ import tempfile
 from openpyxl import load_workbook,Workbook
 import pandas as pd
 from django.conf import settings
+
+
+# ---------- SPIR CONVERTION TOOL ------------
+    # METHODS:
+    #  -- SPRI_tool_page
+    #  -- SPIR_file_upload_ajax
+    #  -- SPIR_selection_preview
+    #  -- SPIR_duplicate_emptyheader_validation
 
 
 def home(request):
@@ -3791,3 +3801,224 @@ def delete_dashboard(request, dashboard_id):
 
     return redirect("dashboard_list")
    
+
+# SPIR CONVERTION TOOL
+def SPRI_tool_page(request):
+
+    return render(request,"spir_convertion/spir_tool.html")
+
+
+@csrf_exempt
+def SPIR_file_upload_ajax(request):
+
+    if request.method == "POST" and request.FILES.get("file"):
+
+        file = request.FILES["file"]
+
+        filename = f"{uuid.uuid4()}_{file.name}"
+        file_path = os.path.join(settings.MEDIA_ROOT, filename)
+
+        with open(file_path, "wb+") as destination:
+            for chunk in file.chunks():
+                destination.write(chunk)
+
+        # Store path
+        request.session["excel_file_path"] = file_path
+        request.session["excel_file_name"] = file.name
+        print(f"Uploaded file Name> {file.name}")
+
+        # Preview
+        df = pd.read_excel(file_path, header=None)
+        preview_data = df.fillna("").values.tolist()
+
+        return JsonResponse({
+            "status": "success",
+            "data": preview_data
+        })
+
+    return JsonResponse({"status": "error"})
+
+
+
+def SPIR_selection_preview(request):
+
+    if request.method == "POST":
+
+        try:
+            if request.content_type == "application/json":
+                data = json.loads(request.body)
+            else:
+                data = json.loads(request.POST.get("payload"))
+
+            # data = json.loads(request.body)
+            action = data.get("action", "preview")
+
+            print("< DATA FROM FRONTEND VIA PAYLOAD >")
+
+            vertical_table = data.get("table1")
+            horizontal_table = data.get("table2")
+            
+            # print(vertical_table)
+            
+            # VERTICAL TABLE RANGE
+            vert_tbl_sr = int(vertical_table.get("startRow"))
+            vert_tbl_er = int(vertical_table.get("endRow"))
+            vert_tbl_sc = int(vertical_table.get("startCol"))
+            vert_tbl_ec = int(vertical_table.get("endCol"))
+
+            # HORIZONTAL TABLE RANGE
+            hori_tbl_sr = int(horizontal_table.get("startRow"))
+            hori_tbl_er = int(horizontal_table.get("endRow"))
+            hori_tbl_sc = int(horizontal_table.get("startCol"))
+            hori_tbl_ec = int(horizontal_table.get("endCol"))
+
+            print(f"< VERITCAL TABLE T1 > SR : {vert_tbl_sr} ER : {vert_tbl_er}  SC : {vert_tbl_sc}  EC : {vert_tbl_ec}")
+            print(f"< HORIZONTAL TABLE T2 > SR : {hori_tbl_sr} ER : {hori_tbl_er}  SC : {hori_tbl_sc}  EC : {hori_tbl_ec}")
+
+            # 🔹 Load stored Excel data
+            SPIR_df = pd.read_excel(request.session.get("excel_file_path"),header=None)
+            # print(SPIR_df.head(5))
+
+            error_msg = []
+
+            # HORIZONTAL AND VERTICAL TABLE
+            horizontal_table_df = SPIR_df.iloc[ hori_tbl_sr:hori_tbl_er+1 , hori_tbl_sc:hori_tbl_ec+1].copy()
+            vertical_table_df = SPIR_df.iloc[ vert_tbl_sr:vert_tbl_er+1 , vert_tbl_sc:vert_tbl_ec+1].copy()
+            
+
+            # VALID EMPTY AND DUPLICATE COLUMN HEADRES 
+            horizontal_table_df_header_row = horizontal_table_df.iloc[0].to_list()
+            vertical_table_df_header_row = vertical_table_df.iloc[:,0].to_list()
+            
+
+            print("HOR HDR LIST ",horizontal_table_df_header_row)
+            print("VRT HDR LIST ",vertical_table_df_header_row)
+
+            
+            horVld_sts = SPIR_duplicate_emptyheader_validation(horizontal_table_df_header_row,"Horiontal Table")
+            verVld_sts = SPIR_duplicate_emptyheader_validation(vertical_table_df_header_row,"Vertical Table")
+            
+            if horVld_sts:
+                error_msg.append(horVld_sts)
+            if verVld_sts:
+                error_msg.append(verVld_sts)
+
+            if error_msg:
+                return JsonResponse({
+                    "status": "error",
+                    "message": ", ".join(error_msg)
+                },status=404)
+
+            print("NO duplication !")
+            # Assign headers
+            horizontal_table_df.columns = [ "" if pd.isna(h) else str(h).strip() for h in horizontal_table_df_header_row]
+            horizontal_table_df = horizontal_table_df.iloc[1:]
+            
+            print("< Horizontal Table df >")
+            print(horizontal_table_df)
+        
+            # vertical_table_df.columns = [ "" if pd.isna(h) else str(h).strip() for h in vertical_table_df_header_row]
+            # vertical_table_df = vertical_table_df.iloc[:,0]            
+        
+            print("< Vertical Table df >")
+            print(vertical_table_df)
+            
+
+            
+            vld_hr_headers=horizontal_table_df.columns.to_list()
+            vld_vert_headers=[ "" if pd.isna(h) else str(h).strip() for h in vertical_table_df_header_row]
+            print(f"Final vertified Columns : ")
+            print("< FINL VERTCL > ",vld_vert_headers)
+            print("< FINAL HOR > ",vld_hr_headers)
+
+            # SEND THE PRIVEW RESPONSE
+            if action == "preview":
+                return JsonResponse({
+                    "status": "success",
+                    "mode": "preview",
+                    "Vertical_table_headers":vld_vert_headers,
+                    "Horizontal_table_headers":vld_hr_headers                
+                })
+
+            # PROCESS FILE
+            if action == "process":
+                
+                
+                original_name = request.session.get("excel_file_name", "SPRI_Resultfile.xlsx")
+                name_without_ext = os.path.splitext(original_name)[0]
+                result_Filename=f"SPIR_Result_{name_without_ext}.xlsx"
+
+                print("Result FIle name : ",result_Filename)
+
+                print("Process file Start !")
+                horiTbl_minIndex , horiTbl_maxIndex = min(horizontal_table_df.index),max(horizontal_table_df.index)
+                print(f"Horizontal Table Min {horiTbl_minIndex}  Max {horiTbl_maxIndex} index")
+
+                HoriTbl_Lookup = {str(idx): row.to_dict() for idx, row in horizontal_table_df.iterrows()}
+                print(HoriTbl_Lookup)
+                
+                result_row = []
+                for i in range(vert_tbl_sc+1, vert_tbl_ec+1):
+
+                    row_dict = {} 
+
+                    
+                    for index in range(vert_tbl_sr, vert_tbl_er+1):
+
+                        key = SPIR_df.iloc[index, vert_tbl_sc]
+                        value = SPIR_df.iloc[index, i]
+
+                        if not pd.isna(key):
+                            row_dict[str(key).strip()] = value
+
+                    
+                    for index in range(horiTbl_minIndex + 1, len(SPIR_df)):
+                    
+                        cell_value = SPIR_df.iloc[index, i]
+
+                        if not pd.isna(cell_value) and isinstance(cell_value, numbers.Number) :
+                            print(f"Row Index {index} <> Cell Value : '{cell_value}'")
+                            merge = row_dict.copy()
+                            merge.update(HoriTbl_Lookup.get(str(index), {}))
+
+                            result_row.append(merge)
+
+                result_dataframe=pd.DataFrame(result_row)
+
+                response = HttpResponse(
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
+                print("File Name in result reposne : ",name_without_ext)
+                response['Content-Disposition'] = f'attachment; filename="{result_Filename}"'
+
+                result_dataframe.to_excel(response, index=False)
+
+                # result_dataframe.to_excel(r"D:/SpirRes.xlsx",index=False)
+                return response
+                            
+
+        except Exception as e:
+            return JsonResponse({
+                "status": "error",
+                "message": str(e)
+            })
+
+    return JsonResponse({"status": "invalid request"})
+
+
+def SPIR_duplicate_emptyheader_validation(header_list,table_name):
+    
+    header_list = ["" if pd.isna(h) else str(h).strip() for h in header_list]
+
+    # CHECK EMPTY SELECTION
+    if any(h == "" for h in header_list):
+        return f"' {table_name} ' Header contains empty or missing values"
+
+    # CHECK DUPLICATE
+    if len(header_list) != len(set(header_list)):
+        from collections import Counter
+        duplicates = [k for k, v in Counter(header_list).items() if v > 1]
+        return f"' {table_name} ' Duplicate Columns : {', '.join(duplicates)}"
+
+    return None  # ✅ valid

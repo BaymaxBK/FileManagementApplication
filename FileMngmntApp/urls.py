@@ -63,8 +63,14 @@ urlpatterns = [
     path('update_my_task/<int:tasktable_id>',views.user_update_task_excel_data,name='user_update_taskdata'),
     path('download_task/<int:task_id>/',views.download_Tasktable_as_excel,name="download_Tasktable_as_excel"),
     path('update_status/',views.user_task_update_status,name="user_task_update_status"),
-    path('get_sheet_names/',views.get_sheet_names,name='get_sheet_names') # AJAX URL
+    path('get_sheet_names/',views.get_sheet_names,name='get_sheet_names'), # AJAX URL
 
+
+    # SPIR TOOL ROOTING
+    path("SPIR_Converter/", views.SPRI_tool_page, name="SPRI_tool_page"),
+    path("spir_file_upload/", views.SPIR_file_upload_ajax, name="SPIR_file_upload_ajax"),
+    path("spir_preview/", views.SPIR_selection_preview, name="SPIR_selection_preview"),
+     
 ]
 
 
