@@ -92,10 +92,10 @@
     <button id="previewBtn" class="btn btn-primary mb-2" disabled>Preview Header</button>
 </div>
 
-<h3 class="mt-5">Excel Range Selection</h3>
 
 <!--  HANDSONTABLE  -->
-<div class="table-container">
+<div class="table-container d-none">
+    <h3 class="mt-5">Excel Range Selection</h3>
     <div id="excelTable" class="mb-5 border" ></div>
 </div>
 
@@ -204,6 +204,7 @@ $(document).ready(function () {
                         hot.destroy();
                     }
 
+                    $(".table-container").removeClass("d-none");    
                     hot = new Handsontable(document.getElementById('excelTable'), {
                         data: res.data,
                         rowHeaders: true,
@@ -375,7 +376,7 @@ $(document).ready(function () {
                 if (res.mode === "preview") {
 
                     $("#previewTable").removeClass("d-none");
-                    $("#previewTable").addClass("border-dark border-2 shadow-lg");
+                    $("#previewTable").addClass("border-dark border-2 p-4 shadow-lg");
 
 
                     console.log("Success response !");

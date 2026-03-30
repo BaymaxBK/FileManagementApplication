@@ -3815,12 +3815,10 @@ def SPIR_file_upload_ajax(request):
 
         file = request.FILES["file"]
 
-        filename = f"{uuid.uuid4()}_{file.name}"
-        file_path = os.path.join(settings.MEDIA_ROOT, filename)
+        fs = FileSystemStorage()
+        filename = fs.save(f"{uuid.uuid4()}_{file.name}", file)
+        file_path = fs.path(filename)
 
-        with open(file_path, "wb+") as destination:
-            for chunk in file.chunks():
-                destination.write(chunk)
 
         # Store path
         request.session["excel_file_path"] = file_path
@@ -4021,4 +4019,4 @@ def SPIR_duplicate_emptyheader_validation(header_list,table_name):
         duplicates = [k for k, v in Counter(header_list).items() if v > 1]
         return f"' {table_name} ' Duplicate Columns : {', '.join(duplicates)}"
 
-    return None  # ✅ valid
+    return None  
