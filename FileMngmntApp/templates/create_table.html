@@ -13,6 +13,7 @@
 <body class="bg-light">
 
     <div class="container mt-5">
+    {% block title %} Create Custom Table {% endblock %}
     {% block content %}
         <div class="card shadow p-4">
             <h2 class="mb-4">Create Custom Table</h2>
@@ -46,7 +47,7 @@
                 {% endfor %}
             {% endif %} -->
 
-            <form method="post">
+            <form method="post" id="createTableForm">
                 {% csrf_token %}
                 <div class="mb-3">
                     <label for="table_name" class="form-label">Table Name</label>
@@ -111,14 +112,57 @@
 
                 </div>
 
-                <div class="mb-3">
-                    <button id="addField-id" type="button" class="btn btn-outline-secondary btn-sm" >+ Add Field</button>
+                
+                <div class="mb-5">
+                    <button id="addField-id" type="button" class="btn btn-outline-success btn-sm" >+ Add Field</button>
+                    <button id="addConst-id" type="button" class="btn btn-outline-secondary btn-sm" >Set Composite Uniques</button>
                 </div>
+                
+        <div class="modal fade" id="compositeModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+
+                    <!-- Header -->
+                    <div class="modal-header">
+                      <h5 class="modal-title">Choose Composite Fields</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div id="modal-body" class="border rounded p-2 m-2 shadow-sm" >
+
+                            <div id="compositeUniqueContainer" class="d-flex flex-wrap align-items-center gap-3 border rounded p-3 mb-3 position-relative">
+                                <div id="uniquComboAddWrapper" class="w-100 d-flex justify-content-end mt-2">
+                                    <button id="comboaddBtn" type="button" class="btn btn-sm btn-primary mt-2" onclick="addCompositeUnique()">
+                                        + Add 
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="compositeUniques border rounded p-2 mb-5">
+                                    <strong>Unique Combination:</strong>
+                                    <p class="text-muted text-center small mb-0 empty-text">
+                                        No composite unique set yet
+                                    </p>
+                            </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
 
                 <button type="submit" class="btn btn-primary" id="createBtn">Create Table</button>
                 <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary ms-2">Back to Dashboard</a>
             </form>
         </div>
+
+        
+        
+                
     {% endblock %}
     </div>
 
@@ -126,15 +170,210 @@
 {% block scripts %}
 <script>
 
+    let fieldIndexCounter = 0; 
     function allowOnlyNumbers(input) {
         input.value = input.value.replace(/[^0-9]/g, '');
+        console.log(`Fields Index Counter ${fieldIndexCounter}`);
     }
 
+    function validateName(input) {
+            const errorEl = input.parentElement.querySelector('.form-text');
+            const value = input.value.trim();
+
+            // Must start with a-z or underscore, and only contain word chars
+            const isValid = /^[a-z_][\w\s]*$/i.test(value);
+            
+            if (!isValid) {
+                errorEl.classList.remove('d-none');
+            } else {
+                errorEl.classList.add('d-none');
+                syncCompositeName(input);
+            }
+    }
+
+    // HIDE/SHOW "NO COMPSITE UNIQE CREATED TO THIS TABLE YET" TEXT
+    function toggleEmptyCompositeText() {
+
+        const container = document.querySelector(".compositeUniques");
+        const seleted_items = container.querySelectorAll(".compositeUnqiueSelectedRow"); // each added combo
+        const emptyText = container.querySelector(".empty-text");
+        
+        if (seleted_items.length === 0) {
+            emptyText.style.display = "block";
+        } else {
+            emptyText.style.display = "none";
+        }
+    }   
+
+    
+    // UPDATE THE SELECTED UNIQUE COMPIST NAMES
+    function updateCombinationNames(index, newValue) {
+
+            const combos = document.querySelectorAll(
+                'input[name="composite_unique_groups[]"]'
+            );
+
+            combos.forEach(input => {
+                let spited_Indices = input.value.split(",");
+                console.log("Splited Values (Indices): ",spited_Indices);
+
+        
+                // safer: rebuild from checkbox mapping
+                const updated = spited_Indices.map(idx => {
+                    // find matching checkbox by value
+                    console.log(`Splited Iterativ columnIndex ${idx}`);
+                    const cb = document.querySelector(
+                        `#compositeUniqueContainer input[data-index="${idx}"]`
+                    );
+
+                    console.log("CheckBox Exist ",cb);
+                    console.log("Values Need to updated in edited Combo ",idx);
+                    return cb ? cb.value : null;
+
+                }).filter(v => v !== null);
+            
+                console.log("Updated Item ",updated.join(","));
+                input.value = spited_Indices.join(",");
+            
+            
+                // update UI text
+                const span = input.closest(".compositeUnqiueSelectedRow").querySelector("span");
+                span.textContent = updated.join(" + ");
+
+            });
+    }
+
+    // REMOVE THE UNIQU COMPOSITE GROUP COLUM IF IT'S DELETED
+    function removeIndexFromCombinations(deletedIndex) {
+
+            const combos = document.querySelectorAll(
+                'input[name="composite_unique_groups[]"]'
+            );
+
+            combos.forEach(input => {
+            
+                const indexes = input.value.split(",");
+            
+                if (indexes.includes(deletedIndex)) {
+                    input.closest(".compositeUnqiueSelectedRow").remove();  // remove UI block
+                }
+            });
+            toggleEmptyCompositeText();
+    }
+
+    //FIELD NAME AND UNQUE COMBINERTION SELECT COLUMN SYNC
+    function syncCompositeName(input) {
+        
+        const index = input.dataset.index;
+        const newValue = input.value;
+
+        console.log("Edited Input value :",newValue,"Index :",index);
+        // find matching checkbox block
+        const wrapper = document.querySelector(
+            `#compositeUniqueContainer [data-index="${index}"]`
+        );
+
+        console.log(`Warpper ${wrapper}`);
+        if (wrapper) {
+            const checkbox = wrapper.querySelector("input");
+            const label = wrapper.querySelector("label");
+
+            console.log("checkbox",checkbox);
+            // update value + label
+            checkbox.value = newValue;
+            label.textContent = newValue;
+        }
+            
+         updateCombinationNames(index, newValue);
+    }
+
+    // ADD COMPSITE FIELDS BUTTON
+    function addCompositeUnique() {
+
+            const checked = document.querySelectorAll(
+                '#compositeUniqueContainer input[type="checkbox"]:checked'
+            );
+            
+            if (checked.length < 2) {
+                alert("Select at least Two field");
+                return;
+            }
+        
+            // collect selected values
+            const values = [];
+            const indexes = [];
+
+            checked.forEach(cb => {
+                values.push(cb.value);
+                indexes.push(cb.dataset.index);
+            });
+        
+            console.log("Added Indice :",indexes);
+            const combinationText = values.join(" + ");
+        
+            // create UI block
+            const html = `
+                <div class="d-flex compositeUnqiueSelectedRow justify-content-between align-items-center border rounded px-2 py-1 mb-2">
+                    <span >${combinationText}</span>
+                    
+                    <div >
+                        <input type="hidden" name="composite_unique_groups[]" value="${indexes.join(",")}">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCombination(this)">❌</button>
+                    </div>
+                </div>
+            `;
+            
+            document.querySelector(".compositeUniques")
+                .insertAdjacentHTML("beforeend", html);
+            
+            // uncheck after adding
+            checked.forEach(cb => cb.checked = false);
+            toggleEmptyCompositeText();
+    }
+
+    
+     
+    function removeCombination(btn) {
+        btn.closest(".compositeUnqiueSelectedRow").remove();
+        toggleEmptyCompositeText();
+    }
+
+
+
+
+    // console.log("Form ",document.querySelector("form"))
     // Call this on page load
     document.addEventListener('DOMContentLoaded',function(){
 
         const addField_rowBtn=document.getElementById('addField-id');
-        
+        const createTableform = document.getElementById("createTableForm");
+
+        createTableform.addEventListener("submit", function (e) {
+            
+            // e.preventDefault();
+            // console.log("form submit compiste unique index to name convertion!");
+
+            const combos = document.querySelectorAll(
+                'input[name="composite_unique_groups[]"]'
+            );
+            combos.forEach(input => {
+            
+                const indexes = input.value.split(",");
+            
+                const names = indexes.map(idx => {
+                
+                    const fieldInput = document.querySelector(
+                        `#fields input[name='field_name[]'][data-index="${idx}"]`
+                    );
+                
+                    return fieldInput ? fieldInput.value.trim() : null;
+                
+                }).filter(v => v); // remove null/empty
+            
+                // 🔥 Replace value with names
+                input.value = names.join(",");
+                });
+        });
 
         function updateCreateButtonState() {
             const fieldRows = document.querySelectorAll('.field-row');
@@ -157,37 +396,6 @@
         // UPDATE INITIAL CREATE BUTTON STATUS
         updateCreateButtonState();
 
-        // AJAX CALL FOR UPLOAD FILE TO GET COLUMN NAME
-    //     document.getElementById("table_selectionId").addEventListener('change',function(){
-
-    //     DropdownValue=this.value;
-    //     if (DropdownValue){
-
-    //         fetch(`/get_table_fields/${DropdownValue}/`)
-    //         .then(response => response.json())
-    //         .then( data => { 
-                
-    //             let container = document.getElementById('tableFields');
-    //             container.innerHTML = '';
-                
-    //             console.log(`Lenth ${data.fields.length}`);
-    //             if (data.fields.length > 0){
-    //                 let list = document.createElement('ol');
-
-    //                 data.fields.forEach(element => {
-    //                     let item = document.createElement('li');
-    //                     item.textContent = element;
-    //                     list.appendChild(item); 
-    //                 });
-    //                 container.appendChild(list);
-    //             }
-
-    //         })
-    //         .catch(error => confirm(`Error ${error}`));
-
-    //     }
-
-    // });
 
     // AJAX CALL FOR AFTER UPLOAD THE FILE
     document.getElementById('file_uploade_id').addEventListener('change',function(){
@@ -212,12 +420,18 @@
             .then( response => response.json() )
             .then( data => {
                     console.log("Data From url :"+data);
+                    const composUnq_container = document.getElementById("compositeUniqueContainer");
+                    composUnq_container.innerHTML = ""; // clear old
+                    
+                    
                     data.activeSheet_columns.forEach(col =>{
                         console.log(col);
+                        const index = fieldIndexCounter++;
+                        console.log("Fields Index in Response Row ",index);
                         const fieldHTML =`<div class="row g-2 mb-2 mt-1 field-row">
                         
                         <div class="col-md-4">
-                            <input type="text" name="field_name[]" value="${col}" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <input type="text" name="field_name[]" value="${col}" class="form-control" placeholder="Field Name" data-index="${index}" oninput="validateName(this)" required>
                             <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
                         </div>
 
@@ -235,6 +449,7 @@
                         <div class="col-md-2 maxLengthField-div" style="display:block;">
                             <input type="text" name="max_length[]"  class="form-control maxLengthField" placeholder="Max Size" value="255" oninput="allowOnlyNumbers(this)"></intput>
                         </div>
+
                         
                         <div class="col-md-2">                            
                             <button  type="button" class="btn btn-outline-danger btn-sm remove-Field-row" >❌</button>
@@ -268,11 +483,35 @@
                         </div>
 
                     </div>`;
+                    
+                    const FieldcheckboxHTML = `
+                        <div class="form-check d-flex align-items-center mb-1" data-index="${index}">
+                            <input class="form-check-input me-1" type="checkbox" 
+                                   name="composite_unique_fields[]" 
+                                   value="${col}" id="comp_${col}" data-index="${index}">
+                            <label class="form-check-label" for="comp_${col}">
+                                ${col}
+                            </label>
+                        </div>
+                    `;
 
+                    
+                    composUnq_container.insertAdjacentHTML("beforeend", FieldcheckboxHTML);
                     document.getElementById("fields").insertAdjacentHTML("beforeend", fieldHTML);
                     updateCreateButtonState();
                     updateCkFieldIndexes();
+
                 });
+
+                const addCompositeCombinationBtnHtml =`
+                    <div id="uniquComboAddWrapper" class="w-100 d-flex justify-content-end mt-2">
+                        <button id="comboaddBtn" type="button" class="btn btn-sm btn-primary mt-2" onclick="addCompositeUnique()">
+                            + Add 
+                        </button>
+                    </div>
+                    `;
+                composUnq_container.insertAdjacentHTML("beforeend", addCompositeCombinationBtnHtml);
+
                     // let sheetDropdown=document.getElementById("SheetDropDown_id");
                     // sheetDropdown.innerHTML='<option value="">-- Select Sheet --</option>';
                     // if (data.sheet_names) {
@@ -309,17 +548,28 @@
 
     });
         
+        // TOGGLE COMPOITE FIELDS DIV
+        $('#addConst-id').on('click',function(){
+            
+            const modal = new bootstrap.Modal(document.getElementById('compositeModal'));
+            modal.show();
+
+        });
 
 
 
    
         // ADD FIELD ROW BUTTON
         addField_rowBtn.addEventListener("click",function(){
-            
+                const composUnq_container = document.getElementById("compositeUniqueContainer");
+                const index=fieldIndexCounter++;
+                console.log("Newly inserted row Id ",index);
+                const checkboxId = `comp_${index}`;
+
                 const fieldHTML =`<div class="row g-2 mb-2 mt-1 field-row">
                         
                         <div class="col-md-4">
-                            <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required oninput="validateName(this)">
+                            <input type="text" name="field_name[]" class="form-control" placeholder="Field Name" required data-index="${index}" oninput="validateName(this)">
                             <div class="form-text text-danger d-none py-2">❌ Invalid field name.</div>
                         </div>
 
@@ -371,22 +621,64 @@
 
                     </div>`;
 
+                    
             
+            
+            const FieldcheckboxHTML = `
+                        <div class="form-check d-flex align-items-center mb-1" data-index="${index}">
+                            <input class="form-check-input me-1" type="checkbox" name="composite_unique_fields[]" 
+                                  data-index="${index}" id="${checkboxId}" value="">
+                            <label class="form-check-label" for="${checkboxId}">
+                                Unnamed${index+1}
+                            </label>
+                        </div>
+                    `;
 
+                    
+            document.getElementById("uniquComboAddWrapper").remove();
+            const addCompositeCombinationBtnHtml =`
+            <div id="uniquComboAddWrapper" class="w-100 d-flex justify-content-end mt-2">
+                    <button id="comboaddBtn" type="button" class="btn btn-sm btn-primary mt-2" onclick="addCompositeUnique()">
+                        + Add 
+                    </button>
+            </div>`;    
+
+            composUnq_container.insertAdjacentHTML("beforeend", FieldcheckboxHTML);
+            composUnq_container.insertAdjacentHTML("beforeend", addCompositeCombinationBtnHtml);
+
+
+            
             document.getElementById("fields").insertAdjacentHTML("beforeend", fieldHTML);
-            updateCreateButtonState()
-            updateCkFieldIndexes()
+            updateCreateButtonState();
+            updateCkFieldIndexes();
         });
         
         //REMOVE FILED ROW BUTTON 
         document.addEventListener("click",function(event){
 
             if(event.target.classList.contains("remove-Field-row")){
+                
                 const fieldRow = event.target.closest('.field-row');
-                console.log(fieldRow)
-                if (fieldRow) {
+                const input = fieldRow.querySelector("input[name='field_name[]']");
+                const index = input.dataset.index;
+
+                console.log("Fields Index to delete :",index);
+
+                const checkboxWrapper = document.querySelector(
+                    `#compositeUniqueContainer [data-index="${index}"]`
+                );
+
+                if (checkboxWrapper) {
+                    checkboxWrapper.remove();
+                }
+
+                console.log(fieldRow);
+                if (fieldRow) {                    
                     fieldRow.remove();
                 }
+
+                removeIndexFromCombinations(index);
+
                 updateCreateButtonState();
                 updateCkFieldIndexes();
             }
@@ -409,20 +701,7 @@
         });
 
         
-        function validateName(input) {
-            const errorEl = input.parentElement.querySelector('.form-text');
-            const value = input.value.trim();
-
-            // Must start with a-z or underscore, and only contain word chars
-            const isValid = /^[a-z_][\w\s]*$/i.test(value);
-            
-            if (!isValid) {
-                errorEl.classList.remove('d-none');
-            } else {
-                errorEl.classList.add('d-none');
-            }
-        }
-
+    
         document.addEventListener("change", function(event) {
             
             if(event.target.classList.contains("field_type")){

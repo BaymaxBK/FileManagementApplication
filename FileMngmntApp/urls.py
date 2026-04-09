@@ -15,6 +15,8 @@ urlpatterns = [
     path('admin_dashboard/',views.user_admin,name='admin_dashboard'),
     path('create_table/',views.create_custom_table,name='create_table'),
     path("custom_table/<int:table_id>/alter/",views.alter_table_schema,name="alter_table_schema"),
+    path("delete-composite-unique/", views.delete_composite_unique, name="delete_composite_unique"),
+    path("add-composite-unique/", views.add_composite_unique, name="add_composite_unique"),
     path('custom_table/delete-field/<int:field_id>',views.delete_table_field,name="deleted_table_field"),
 
     path('create_task/',views.create_custom_Tasktable,name="create_task"),

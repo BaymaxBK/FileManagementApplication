@@ -117,6 +117,8 @@ class CompositeUniqueConstraint(models.Model):
         related_name="unique_groups"
     )
 
+    constraint_name = models.CharField(max_length=255, null=True, blank=True) 
+
     def __str__(self):
         cols = ", ".join(f.field_name for f in self.fields.all())
         return f"UNIQUE ({cols})"

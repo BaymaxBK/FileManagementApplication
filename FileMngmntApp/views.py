@@ -239,8 +239,10 @@ def create_custom_table(request):
         uniques      = request.POST.getlist("unique[]")
         defaults     = request.POST.getlist("default_value[]")
         checks       = request.POST.getlist("check_condition[]")
-        composite_unique = request.POST.getlist("composite_unique[]")
+        # composite_unique = request.POST.getlist("composite_unique[]")
+        composite_unique_group = request.POST.getlist("composite_unique_groups[]")
 
+        print(f"Compouinque group {composite_unique_group}")
         print("Fields Name : ",field_names)
         print("Filed Types :",field_types)
         print("max size :",field_max_lengths)
@@ -248,7 +250,8 @@ def create_custom_table(request):
         print("uiqeue : ",uniques)
         print("default  : ",defaults)
         print("checks : ",checks)
-        print("Composite unique : ",composite_unique)
+
+        # print("Composite unique : ",composite_unique)
         #return redirect('create_table')
 
         if not table_name or not field_names or not field_types or len(field_names) != len(field_types):
@@ -333,18 +336,37 @@ def create_custom_table(request):
         #     except Exception as e:
         #         messages.error(request, f"Error creating table: {e}")
     
-
-        # return render(request, "create_table.html")
         composite_unique_columns = []
+        composite_constraints_data = []
+        cu_existing_sets = set()
 
-        for i, name in enumerate(field_names):
-            if str(i) in composite_unique:
-                composite_unique_columns.append(f'"{sanitize_name(name)}"')
+        def normalize_fields(fields):
+            return sorted([f.strip() for f in fields])
 
+        for group in composite_unique_group:
+            cu_field_names = [sanitize_name(f.strip()) for f in group.split(",") if f.strip()]
+
+            cu_fields_sorted = normalize_fields(group.split(","))
+            if len(cu_fields_sorted) > 1:
+
+                if cu_fields_sorted in cu_existing_sets:
+                    continue 
+
+                cu_existing_sets.add(cu_fields_sorted)
+
+                constraint_name = f"{table_name_sql}_{'_'.join(cu_field_names)}_uniq"
+
+                composite_unique_columns.append(f"CONSTRAINT {constraint_name} UNIQUE ({', '.join(cu_field_names)})")
+                composite_constraints_data.append({
+                    "constraint_name": constraint_name[:60],
+                    "fields": cu_field_names
+                })
+                
         composite_unique_clause = ""
-        if len(composite_unique_columns) > 1:
-            composite_unique_clause = f", UNIQUE ({', '.join(composite_unique_columns)})"
+        if composite_unique_columns:
+            composite_unique_clause = ", " +", ".join(composite_unique_columns)
 
+        print("Compiste Unique Cluase ",composite_unique_clause)
 
         fields_sql_query=", ".join(field_NameTypeConst_sql)
 
@@ -372,7 +394,7 @@ def create_custom_table(request):
             )
 
             
-            created_field_instances = []
+            field_map = {}
 
             for i, name in enumerate(field_names):
 
@@ -413,10 +435,10 @@ def create_custom_table(request):
                 _unique=True if str(i) in uniques else False
                 _check=checks[i].strip() if checks[i].strip() else None
                 
-
+                 
                 field_obj = customFields.objects.create(
 
-                    table =Tabel, 
+                    table =Tabel,
                     display_name =name.strip(),  # Original name
                     field_name = sanitize_name(name),# Safe name
                     field_kind = field_kind,
@@ -430,14 +452,33 @@ def create_custom_table(request):
 
                 )
 
-                created_field_instances.append(field_obj)
+                field_map[name.strip()]=field_obj
 
             # INSERT COMPOSTE UNIQUE TO THE 'CompositeUniqueConstraint (ORM)'
-            if len(composite_unique_columns) > 1:
-                cu = CompositeUniqueConstraint.objects.create(table=Tabel)
+            for item in composite_constraints_data:
 
-                for i in composite_unique:
-                    cu.fields.add(created_field_instances[int(i)])
+                constraint = CompositeUniqueConstraint.objects.create(
+                    table=Tabel,
+                    constraint_name=item["constraint_name"]
+                )
+
+                # 🔥 map fields
+                field_objs = customFields.objects.filter(
+                    table=Tabel,
+                    field_name__in=item["fields"]
+                )
+
+                constraint.fields.set(field_objs)
+            # for group in composite_unique_group:
+                # field_names = [f.strip() for f in group.split(",") if f.strip()]
+                # field_objs = [field_map.get(name) for name in field_names if name in field_map]
+                # if len(field_objs) > 1:
+                    # print("Compoist Unique Len > 1 for fields ",field_names)
+                    # cu = CompositeUniqueConstraint.objects.create(table=Tabel)
+                    # cu.fields.set(field_objs)
+ 
+                # for i in composite_unique:
+                    # cu.fields.add(created_field_instances[int(i)])
 
 
             # for fname, ftype,max_len in zip(field_names, field_types,field_max_lengths):
@@ -482,6 +523,7 @@ def column_exists(db_table, column_name):
     with connection.cursor() as cursor:
         cursor.execute(sql, [db_table, column_name])
         return cursor.fetchone() is not None
+    
         
 # EDIT TABLE SCHEMA
 @transaction.atomic
@@ -495,22 +537,33 @@ def alter_table_schema(request, table_id):
         .get(id=table_id)
     )
 
+    def composite_unique_response(table):
+        
+        fields = list(table.fields.all().order_by("id"))
+        field_index_map = {field.id: idx for idx, field in enumerate(fields)}
+        composite_uniques_data = []
+
+        for cu in table.composite_uniques.all():
+            cu_indexes=[]
+            cu_fields=[]
+
+            for f in cu.fields.all():
+                cu_indexes.append(str(field_index_map.get(f.id)))
+                cu_fields.append(f.display_name)
+
+            composite_uniques_data.append({
+                "id": cu.id,
+                "constraint_name":cu.constraint_name,
+                "cu_indexes": ",".join(cu_indexes),
+                "cu_names": " + ".join(cu_fields)
+                # "fields": [f.display_name for f in cu.fields.all()]
+            })
+
+        print("Couposite Unques Data : ",composite_uniques_data)
+        return fields, composite_uniques_data
     
-    field_names = list(
-        table.fields.values_list("display_name", flat=True)
-    )
-
-    print("Fields Inside the Table > ",field_names)
-
-    fields = list(table.fields.all().order_by("id"))
-    composite_uniques = []
-
-    for cu in table.composite_uniques.all():
-        composite_uniques.append({
-            "id": cu.id,
-            "fields": [f.display_name for f in cu.fields.all()]
-        })
-
+    fields,composite_uniques_data = composite_unique_response(table)
+    
     if request.method == "POST":
         
         sql_log = []
@@ -684,6 +737,28 @@ def alter_table_schema(request, table_id):
                 ''')
                 field.field_name = new_col
                 field.display_name = new_col_display
+                field.save()
+
+                affected_constraints = field.unique_groups.all()
+
+                #RENAME THE AFFECTED COMPOSITE UNIQUE CONSTRING NAME
+                for cu in affected_constraints:
+
+                    old_constraint_name = cu.constraint_name
+                    field_names = [f.field_name for f in cu.fields.all()]
+                    print("Affected Fields Columns :",field_names)
+
+                    new_constraint_name = f"{db_table}_{'_'.join(field_names)}_uniq"
+                    new_constraint_name = new_constraint_name[:60].lower()
+
+                    print(f"Old Cont Name :<{old_constraint_name}> New Cont Name <{new_constraint_name}>")
+                    run_sql(f'''
+                        ALTER TABLE {db_table}
+                        RENAME CONSTRAINT "{old_constraint_name}" TO "{new_constraint_name}";
+                    ''')
+
+                    cu.constraint_name = new_constraint_name
+                    cu.save()
 
             # # 2️⃣ Change type
             # if field.field_type != new_type:
@@ -770,111 +845,7 @@ def alter_table_schema(request, table_id):
             
             field.save()
 
-        # try:
-        #     with transaction.atomic():
-        #         with connection.cursor() as cursor:
-
-        #             for i, field in enumerate(fields):
-        #                 old = old_names[i]
-        #                 new = new_names[i]
-
-        #                 # 🔄 RENAME
-        #                 if old != new:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     RENAME COLUMN "{old}" TO "{new}"
-        #                     '''
-        #                     cursor.execute(sql)
-        #                     sql_log.append(sql)
-
-                            
-
-        #                     field.field_name = new
-        #                     field.display_name = new
-        #                     field.save()
-
-        #                 col = new
-
-        #                 # 🔒 NOT NULL
-        #                 if str(i) in not_nulls:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     ALTER COLUMN "{col}" SET NOT NULL
-        #                     '''
-        #                 else:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     ALTER COLUMN "{col}" DROP NOT NULL
-        #                     '''
-        #                 cursor.execute(sql)
-        #                 sql_log.append(sql)
-
-        #                 # ⭐ UNIQUE
-        #                 constraint = f"{table.table_name}_{col}_unique"
-        #                 if str(i) in uniques:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     ADD CONSTRAINT IF NOT EXISTS {constraint}
-        #                     UNIQUE ("{col}")
-        #                     '''
-        #                 else:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     DROP CONSTRAINT IF EXISTS {constraint}
-        #                     '''
-        #                 cursor.execute(sql)
-        #                 sql_log.append(sql)
-
-        #                 # 🎯 DEFAULT
-        #                 if defaults[i]:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     ALTER COLUMN "{col}" SET DEFAULT '{defaults[i]}'
-        #                     '''
-        #                 else:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     ALTER COLUMN "{col}" DROP DEFAULT
-        #                     '''
-        #                 cursor.execute(sql)
-        #                 sql_log.append(sql)
-
-        #                 # 🔍 CHECK
-        #                 check_name = f"{table.table_name}_{col}_check"
-        #                 if checks[i]:
-        #                     sql = f'''
-        #                     ALTER TABLE "{table.table_name}"
-        #                     DROP CONSTRAINT IF EXISTS {check_name},
-        #                     ADD CONSTRAINT {check_name}
-        #                     CHECK ({checks[i]})
-        #                     '''
-        #                     cursor.execute(sql)
-        #                     sql_log.append(sql)
-
-        #                 # update metadata
-        #                 field.is_not_null = str(i) in not_nulls
-        #                 field.is_unique = str(i) in uniques
-        #                 field.default_value = defaults[i] or None
-        #                 field.check_constraint = checks[i] or None
-        #                 field.save()
-
-        #         TableSchemaChange.objects.create(
-        #             table=table,
-        #             executed_by=request.user,
-        #             sql_executed="\n".join(sql_log)
-        #         )
-
-        #     return redirect("edit_custom_table", table.id)
-
-        # except Exception as e:
-        #     TableSchemaChange.objects.create(
-        #         table=table,
-        #         executed_by=request.user,
-        #         sql_executed="\n".join(sql_log),
-        #         success=False,
-        #         error_message=str(e)
-        #     )
-        #     raise
+        
         table = (
             CustomTable.objects
             .prefetch_related(
@@ -883,8 +854,8 @@ def alter_table_schema(request, table_id):
             )
             .get(id=table_id)
         )
+        fields,composite_uniques_data = composite_unique_response(table)
 
-        fields = list(table.fields.all().order_by("id"))
         if not error_msg_exist:
             messages.success(request, "Table schema updated successfully")
 
@@ -894,9 +865,99 @@ def alter_table_schema(request, table_id):
         {
             "table": table,
             "fields": fields,
-            "composite_uniques": composite_uniques
+            "composite_uniques_data": composite_uniques_data
         }
     )
+
+def add_composite_unique(request):
+
+    if request.method == "POST":
+
+        data = json.loads(request.body)
+
+        table_id = data.get("table_id")
+        indexes = data.get("indexes")   # ["0","2"]
+        names = data.get("names")       # ["name","email"]
+
+        try:
+            table = CustomTable.objects.get(id=table_id)
+            db_table = table.table_name
+
+            fields = list(table.fields.all().order_by("id"))
+
+           
+            selected_fields = [fields[int(i)] for i in indexes]
+            displayNamefor_error = [f.display_name for f in selected_fields]
+
+            column_names = [f.field_name for f in selected_fields]
+            print("Adding Const Column : ",column_names)
+            
+            constraint_name = f"{db_table}_{'_'.join(column_names)}_uniq"
+            constraint_name = constraint_name[:60].lower()
+
+            
+            cols_sql = ", ".join([f'"{col}"' for col in column_names])
+
+            with connection.cursor() as cursor:
+                cursor.execute(f"""
+                    SELECT COUNT(*) FROM (
+                        SELECT {cols_sql}
+                        FROM {db_table}
+                        GROUP BY {cols_sql}
+                        HAVING COUNT(*) > 1
+                    ) t;
+                """)
+                has_duplicates = cursor.fetchone()[0] > 0
+
+            if has_duplicates:
+
+                error_Col=[f"' {col} '" for col in displayNamefor_error]
+                    
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"Duplicate values exist in {", ".join(error_Col)} Cannot create UNIQUE !"
+                })
+
+
+            # CHECK EXISTING COLUMN ON ' CompositeUniqueConstraint ' MODEL
+            new_set = set(column_names)
+            for cu in table.composite_uniques.all():
+
+                existing_set = set(f.field_name for f in cu.fields.all())
+                if existing_set == new_set:
+                    return JsonResponse({
+                        "status": "error",
+                        "message": "⚠️ This combination already exists"
+                    })
+
+            
+            run_sql(f'''
+                ALTER TABLE {db_table}
+                ADD CONSTRAINT "{constraint_name}"
+                UNIQUE ({cols_sql});
+            ''')
+    
+            cu = CompositeUniqueConstraint.objects.create(
+                table=table,
+                constraint_name=constraint_name
+            )
+            cu.fields.set(selected_fields)
+
+            return JsonResponse({
+                "status": "success",
+                "id": cu.id,
+                "constraint_name": constraint_name,
+                "display": " + ".join(names)
+            })
+
+        except Exception as e:
+            return JsonResponse({
+                "status": "error",
+                "message": str(e)
+            })
+
+    return JsonResponse({"status": "error"})
+
 
 @require_POST
 def delete_table_field(request, field_id):
@@ -922,6 +983,39 @@ def delete_table_field(request, field_id):
             "success": False,
             "error": str(e)
         })
+
+
+def delete_composite_unique(request):
+
+    if request.method == "POST":
+
+        constraint_id = request.POST.get("id")
+        constraint_name = request.POST.get("constraint_name")
+
+        print("Constraint name : ",constraint_name)
+        try:
+            cu = CompositeUniqueConstraint.objects.get(id=constraint_id)
+
+            db_table = cu.table.table_name
+            print("CU DELETE Table Name ",db_table)
+
+            
+            run_sql(f'''
+                ALTER TABLE {db_table}
+                DROP CONSTRAINT "{constraint_name}";
+            ''')
+
+            cu.delete()
+
+            return JsonResponse({"status": "success"})
+
+        except Exception as e:
+            return JsonResponse({
+                "status": "error",
+                "message": str(e)
+            })
+
+    return JsonResponse({"status": "error", "message": "Invalid request"})
 
 
 @login_required
