@@ -915,7 +915,7 @@ def add_composite_unique(request):
                     
                 return JsonResponse({
                     "status": "error",
-                    "message": f"Duplicate values exist in {", ".join(error_Col)} Cannot create UNIQUE !"
+                    "message": f"Duplicate values exist in {', '.join(error_Col)} Cannot create UNIQUE !"
                 })
 
 
