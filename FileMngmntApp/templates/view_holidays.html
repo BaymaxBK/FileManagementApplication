@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %} View Holydays {% endblock %}
+
+
+{% block styles %}
+<style>
+.holiday-row {
+    transition: 0.2s;
+}
+
+.holiday-row:hover {
+    background-color: #f8f9fa;
+    transform: scale(1.01);
+}
+</style>
+{% endblock %}
+
+
+{% block content %}
+<!-- Delete Modal -->
+
+<div class="modal fade" id="deleteHolidayModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Delete Holiday
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                Are you sure you want to delete 
+                <strong id="holidayName"></strong>?
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger btn-sm" id="confirmDelete">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+<div class="container mt-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0">{{ project.display_name }}</h4>
+            <small class="text-muted">Holiday Management</small>
+        </div>
+
+        <!-- Back Button -->
+        <a href="{% url 'project_dashboard' project.id %}" 
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+
+    <!-- Summary Card -->
+    <div class="card shadow-sm mb-4 p-3">
+        <div class="d-flex justify-content-between">
+            <div>
+                <h6 class="mb-1 text-muted">Total Holidays</h6>
+                <h4 class="fw-bold" id="holidayCount">{{ holidays|length }}</h4>
+            </div>
+
+            <div class="text-end">
+                <i class="bi bi-calendar-event fs-1 text-primary"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Holiday Table Card -->
+    <div class="card shadow-sm">
+
+        <div class="card-body">
+
+            {% if holidays %}
+
+            <div class="table-responsive">
+                <table class="table align-middle">
+
+                    <thead class="table-light">
+                        <tr>
+                            <th>Holiday</th>
+                            <th>Date</th>
+                            <th>Day</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                        {% for h in holidays %}
+                        <tr class="holiday-row">
+
+                            <!-- Name -->
+                            <td>
+                                <span class="fw-semibold">{{ h.name }}</span>
+                            </td>
+
+                            <!-- Date -->
+                            <td>
+                                {{ h.date|date:"d M Y" }}
+                            </td>
+
+                            <!-- Day -->
+                            <td>
+                                <span class="badge bg-light text-dark">
+                                    {{ h.date|date:"l" }}
+                                </span>
+                            </td>
+
+                            <!-- Action -->
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-danger delete-holiday"
+                                        data-id="{{ h.id }}"
+                                        data-name="{{ h.name }}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+
+                        </tr>
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+            </div>
+
+            {% else %}
+
+            <!-- Empty State -->
+            <div class="text-center py-5">
+                <i class="bi bi-calendar-x fs-1 text-muted"></i>
+                <p class="text-muted mt-3">No holidays added yet</p>
+
+                <a href="{% url 'upload_holidays' project.id %}" 
+                   class="btn btn-primary btn-sm mt-2">
+                    <i class="bi bi-upload"></i> Upload Holidays
+                </a>
+            </div>
+
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+let selectedHolidayId = null;
+
+$(".delete-holiday").click(function() {
+    selectedHolidayId = $(this).data("id");
+    let name = $(this).data("name");
+
+    $("#holidayName").text(name);
+
+    let modal = new bootstrap.Modal(document.getElementById('deleteHolidayModal'));
+    modal.show();
+});
+
+$("#confirmDelete").click(function() {
+
+    $.ajax({
+        url: "/delete-holiday/" + selectedHolidayId + "/",
+        type: "POST",
+        data: {
+            csrfmiddlewaretoken: "{{ csrf_token }}"
+        },
+        success: function(response) {
+
+            if (response.status === "success") {
+
+                // 🔥 Remove row instantly
+                $("button[data-id='" + selectedHolidayId + "']").closest("tr").remove();
+                
+                let newCount = $("table tbody tr").length;
+                $("#holidayCount").text(newCount);
+
+                // Close modal
+                $("#deleteHolidayModal").modal("hide");
+            }
+        }
+    });
+
+});
+</script>
+{% endblock %}

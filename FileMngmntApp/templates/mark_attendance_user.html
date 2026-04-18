@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+.attendance-card {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 16px;
+}
+
+/* Status buttons */
+.status-card {
+    display: block;
+    padding: 12px;
+    border-radius: 10px;
+    text-align: center;
+    font-weight: 500;
+    cursor: pointer;
+    border: 2px solid #ddd;
+    transition: 0.2s;
+}
+
+/* Colors */
+.status-card.present {
+    border-color: #198754;
+}
+
+.status-card.absent {
+    border-color: #dc3545;
+}
+
+.status-card.leave {
+    border-color: #ffc107;
+}
+
+/* Hover */
+.status-card:hover {
+    transform: scale(1.03);
+}
+
+/* Selected state */
+input[type="radio"]:checked + .status-card {
+    background-color: #212529;
+    color: #fff;
+    border-color: #212529;
+}
+
+.back-btn {
+    position: sticky;
+    top: 10px;
+    z-index: 10;
+}
+</style>
+{% endblock %}
+
+
+
+{% block content %}
+
+<!-- 🔙 BACK BUTTON (ADD HERE) -->
+<div class="text-end mb-2 me-1">
+    {% if back_url == "project_dashboard" %}
+        <a href="{% url back_url project.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    {% else %}
+        <a href="{% url back_url %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    {% endif %}
+</div>
+
+<div class="container d-flex justify-content-center align-items-center" style="min-height: 80vh;">
+
+    
+    <div style="width: 100%; max-width: 400px;">
+
+        <!-- CARD -->
+        <div class="card shadow-lg p-4 attendance-card">
+
+            <!-- Header -->
+            <div class="text-center mb-4">
+                <h4 class="fw-bold">{{ project.display_name }}</h4>
+                <p class="text-muted mb-1">Mark Your Attendance</p>
+                <small class="text-muted">
+                    <i class="bi bi-calendar"></i> {{ today }}
+                </small>
+            </div>
+
+            <!-- Form -->
+            <form method="POST">
+                {% csrf_token %}
+
+                <!-- Status Buttons -->
+                <div class="d-grid gap-3 mb-4">
+
+                    <input type="radio" name="status" id="present" value="present" hidden
+                        {% if existing and existing.status == "present" %}checked{% endif %}>
+
+                    <label for="present" class="status-card present">
+                        ✅ Present
+                    </label>
+
+
+                    <input type="radio" name="status" id="absent" value="absent" hidden
+                        {% if existing and existing.status == "absent" %}checked{% endif %}>
+
+                    <label for="absent" class="status-card absent">
+                        ❌ Absent
+                    </label>
+
+
+                    <input type="radio" name="status" id="leave" value="leave" hidden
+                        {% if existing and existing.status == "leave" %}checked{% endif %}>
+
+                    <label for="leave" class="status-card leave">
+                        🟡 Leave
+                    </label>
+
+                </div>
+
+                <!-- Submit -->
+                <button class="btn btn-dark w-100" {% if is_holiday or is_sunday %}disabled{% endif %}>
+                    {% if existing %}Update Attendance{% else %}Submit Attendance{% endif %}
+                </button>
+            </form>
+
+        </div>
+
+        
+
+    </div>
+</div>
+
+{% endblock %}

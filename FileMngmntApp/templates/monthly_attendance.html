@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+.attendance-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+}
+
+.header {
+    margin-bottom: 10px;
+}
+
+.day-header {
+    text-align: center;
+    font-weight: 600;
+    padding: 8px;
+    background: #f1f3f5;
+    border-radius: 6px;
+}
+
+.day-header:last-child {
+    color: red;
+}
+
+.day-box {
+    padding: 12px;
+    text-align: center;
+    border-radius: 10px;
+    background: #f8f9fa;
+    font-size: 14px;
+}
+
+.day-box.present {
+    background: #198754;
+    color: white;
+}
+
+.day-box.absent {
+    background: #dc3545;
+    color: white;
+}
+
+.day-box.leave {
+    background: #ffc107;  
+}
+
+.day-box.sunday {
+    background: #e7f1ff;
+}
+
+.day-box.holiday {
+    background: #e0f7fa;
+}
+
+.day-box:hover {
+    transform: scale(1.06);
+    transition: 0.2s;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.back-fab {
+    position: fixed;
+    bottom: 40px;
+    right: 130px;
+
+    width: 50px;
+    height: 50px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background-color: #212529;
+    color: white;
+
+    border-radius: 50%;
+    text-decoration: none;
+
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    transition: 0.3s;
+}
+
+.back-fab:hover {
+    transform: scale(1.1);
+    background-color: #000;
+}
+
+.has-request {
+    border: 2px dashed #ffc107; /* yellow */
+    position: relative;
+}
+
+</style>
+{% endblock %}
+
+
+
+{% block content %}
+<div class="container mt-2">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        
+        <h4 class="fw-bold">{{ project.display_name }} - Monthly Attendance</h4>
+        <!-- Month Selector -->
+        <div class="d-flex align-items-center gap-2">
+            
+            <form method="GET" class="d-flex gap-2">
+                <input type="number" name="month" value="{{ month }}" min="1" max="12" class="form-control">
+                <input type="number" name="year" value="{{ year }}" class="form-control">
+                <button class="btn btn-dark">Load</button>
+            </form>
+
+            <a href="{% url 'my_requests' project.id %}" 
+                class="btn btn-outline-dark btn-md">
+                <i class="bi bi-list-check"></i> My Requests
+            </a>
+            
+         </div>
+        
+    </div>
+
+    
+
+    <!-- Summary Cards -->
+    <div class="row text-center mb-4">
+        <div class="col-md-4">
+            <div class="card bg-success text-white p-2">
+                <h5>{{ present }}</h5>
+                <small>Present</small>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-danger text-white p-2">
+                <h5>{{ absent }}</h5>
+                <small>Absent</small>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-warning text-dark p-2">
+                <h5>{{ leave }}</h5>
+                <small>Leave</small>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="attendance-grid header">
+        <div class="day-header">Mon</div>
+        <div class="day-header">Tue</div>
+        <div class="day-header">Wed</div>
+        <div class="day-header">Thu</div>
+        <div class="day-header">Fri</div>
+        <div class="day-header">Sat</div>
+        <div class="day-header text-danger">Sun</div>
+    </div>
+
+    <!-- Calendar Grid -->
+    <div class="attendance-grid">
+
+        {% for i in ""|center:first_weekday %}
+            <div></div>
+        {% endfor %}
+
+        {% for day in days_data %}
+        <div class="day-box
+            {% if day.status == 'present' %}present
+            {% elif day.status == 'absent' %}absent
+            {% elif day.status == 'leave' %}leave
+            {% elif day.status == 'sunday' %}sunday
+            {% elif day.status == 'holiday' %}holiday
+            {% elif day.request_status %}has-request
+            {% endif %}
+        "
+        data-date="{{ day.full_date|date:'Y-m-d' }}"
+        data-status="{{ day.status }}"
+        data-request="{{ day.request_status }}"
+        style="cursor:pointer;"
+        >
+        
+            <strong>{{ day.day }}</strong><br>
+
+            {% if day.status == "present" %}
+                <i class="bi bi-patch-check"></i>
+            {% elif day.status == "absent" %}
+                <i class="bi bi-x-circle"></i>
+            {% elif day.status == "leave" %}
+                <i class="bi bi-star"></i>
+            {% elif day.status == "sunday" %}
+                <i class="bi bi-calendar-week text-primary" title="Sunday"></i>
+            {% elif day.status == "holiday" %}
+                <i class="bi bi-star-fill text-info" title="{{ day.holiday_name }}"></i>
+            {% else %}
+                {% if day.request_status == "pending" %}
+                    <div class="mt-1">
+                        <i class="bi bi-hourglass text-warning" title="Pending Request"></i>
+                    </div>
+                    {% elif day.request_status == "approved" %}
+                    <div class="mt-1">
+                        <i class="bi bi-check-circle text-success" title="Approved"></i>
+                    </div>
+                    
+                    {% elif day.request_status == "rejected" %}
+                    <div class="mt-1">
+                        <i class="bi bi-x-circle text-danger" title="Rejected"></i>
+                    </div>
+                {% else %}
+                    <i class="bi bi-circle"></i>
+                {% endif %}
+                
+            {% endif %}
+        </div>
+        {% endfor %}
+
+    </div>
+    <a href="{{ back_url}}" 
+               class="back-fab">
+                <i class="bi bi-arrow-left"></i>
+    </a>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+$(".day-box").click(function(){
+
+    let status = $(this).data("status");
+    let date = $(this).data("date");
+    let requestStatus = $(this).data("request");
+
+    let today = new Date().toISOString().split("T")[0];
+
+    if (status === "sunday" || status === "holiday") {
+        alert("Cannot request on holiday");
+        return;
+    }
+
+    if (status === "present" || status === "absent" || status === "leave") {
+        alert("Attendance already marked");
+        return;
+    }
+
+    if (requestStatus === "pending") {
+        alert("Request already pending");
+        return;
+    }
+
+    // ❌ Block future dates
+    if (date > today) {
+        alert("Future date not allowed");
+        return;
+    }
+
+
+    window.location.href = "/project/{{ project.id }}/request-attendance/?date=" + date;
+
+});
+</script>
+{% endblock %}

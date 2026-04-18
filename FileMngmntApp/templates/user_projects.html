@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block styles%}
+<style>
+.project-card {
+    border-radius: 12px;
+    transition: all 0.25s ease;
+}
+
+.project-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- Header -->
+    <div class="mb-4">
+        <h3 class="fw-bold">My Projects</h3>
+        <p class="text-muted">Manage your attendance across projects</p>
+    </div>
+
+    <div class="row">
+
+        {% for project in projects %}
+        <div class="col-md-6 col-lg-4 mb-3">
+
+            <div class="card project-card shadow-sm mb-4 h-100">
+
+                <div class="card-body d-flex flex-column">
+
+                    <!-- Project Name -->
+                    <h5 class="fw-bold">{{ project.display_name }}</h5>
+
+                    <!-- Info -->
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-person"></i> {{ project.created_by.username }}
+                    </p>
+
+                    <!-- Members Count -->
+                    <p class="mb-2">
+                        👥 {{ project.visible_to_users.count }} Members
+                    </p>
+
+                    <!-- Attendance Status -->
+                    <div class="mb-3">
+                        {% if project.is_holiday or is_sunday %}
+                            <span class="badge bg-info">Holiday</span>
+                        {% elif project.attendance_status == "present" %}
+                            <span class="badge bg-success">Present Today</span>
+                        {% elif project.attendance_status == "absent" %}
+                            <span class="badge bg-danger">Absent Today</span>
+                        {% elif project.attendance_status == "leave" %}
+                            <span class="badge bg-warning text-dark">On Leave</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Not Marked</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Button -->
+                    <div class="d-flex gap-2 mt-2">
+
+                        <!-- Mark Attendance -->
+                        <a href="{% url 'mark_my_attendance' project.id %}" 
+                           class="btn btn-success btn-sm w-50">
+                            <i class="bi bi-check-circle"></i> Mark
+                        </a>
+                    
+                        <!-- Monthly Report -->
+                        <a href="{% url 'monthly_attendance' project.id %}" 
+                           class="btn btn-outline-dark btn-sm w-50">
+                            <i class="bi bi-calendar3"></i> Monthly
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+        {% empty %}
+        <div class="text-center mt-5">
+            <p class="text-muted">No projects assigned</p>
+        </div>
+        {% endfor %}
+
+    </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %} Manage Request's {% endblock %}
+
+
+{% block content %}
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold">
+            Upload Holidays - <code>{{ project.display_name }}</code>
+        </h5>
+        
+        
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <h4 class="fw-bold mb-0">Attendance Requests</h4>
+    
+        <a href="{% url 'project_dashboard' project_id %}" class="btn btn-outline-secondary btn-sm ms-5">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+        
+
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            
+            {% if requests %}
+            <table class="table align-middle text-center">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Project</th>
+                        <th>Date</th>
+                        <th>Requested</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th>
+                            Action
+                        </th>
+                    </tr>
+                    <tr>
+                        <th colspan="6"></th> <!-- empty space -->
+        
+                        <th class="text-center">
+                            <button id="approve_all" class="btn btn-outline-success btn-sm {% if not requests %}d-none{% endif %}">
+                                <i class="bi bi-check2-all "></i> Approve All
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for r in requests %}
+                    <tr id="row-{{ r.id }}">
+                        <td>{{ r.user.username }}</td>
+                        <td>{{ r.project.display_name }}</td>
+                        <td>{{ r.date }}</td>
+
+                        <td>
+                            <span class="badge bg-dark">
+                                {{ r.requested_status|title }}
+                            </span>
+                        </td>
+
+                        <td>{{ r.reason }}</td>
+
+                        <td>
+                            <span class="badge 
+                                {% if r.status == 'pending' %}bg-warning text-dark
+                                {% elif r.status == 'approved' %}bg-success
+                                {% else %}bg-danger
+                                {% endif %}">
+                                {{ r.status|title }}
+                            </span>
+                        </td>
+
+                        <td>
+                            {% if r.status == "pending" %}
+                                <button class="btn btn-outline-success btn-sm approve-btn" data-id="{{ r.id }}">
+                                   <i class="bi bi-check-circle-fill fs-5"></i>
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm reject-btn" data-id="{{ r.id }}">
+                                    <i class="bi bi-x-circle-fill fs-5"></i>
+                                </button>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                
+                    {% endfor %}
+
+                    
+                </tbody>
+
+            </table>
+             {% else %}
+
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox" style="font-size: 40px; color: #6c757d;"></i>
+                    <h5 class="mt-3 text-muted">No Attendance Requests</h5>
+                    <p class="text-muted">All requests are processed or no requests submitted.</p>
+                </div>
+
+            {% endif %}
+
+        </div>
+    </div>
+    <div class="text-end">
+
+    </div>
+    
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$("#approve_all").click(function(){
+
+    if (!confirm("Approve all pending requests?")) return;
+
+    $.post("{% url 'approve_all_requests' %}", {
+        csrfmiddlewaretoken: "{{ csrf_token }}"
+    }, function(){
+
+        // 🔥 Update all rows UI
+        $("tbody tr").each(function(){
+
+            let statusCell = $(this).find("td:nth-child(6)");
+            let actionCell = $(this).find("td:nth-child(7)");
+
+            if (statusCell.text().trim() === "Pending") {
+
+                statusCell.html('<span class="badge bg-success">Approved</span>');
+                actionCell.html("-");
+
+            }
+
+        });
+
+    });
+
+});
+
+
+$(".approve-btn").click(function(){
+
+    let id = $(this).data("id");
+
+    $.post("{% url 'update_request_status' %}", {
+        id: id,
+        action: "approve",
+        csrfmiddlewaretoken: "{{ csrf_token }}"
+    }, function(){
+
+        $("#row-" + id + " td:nth-child(6)").html(
+            '<span class="badge bg-success">Approved</span>'
+        );
+
+        $("#row-" + id + " td:nth-child(7)").html("-");
+    });
+
+});
+
+
+$(".reject-btn").click(function(){
+
+    let id = $(this).data("id");
+
+    $.post("{% url 'update_request_status' %}", {
+        id: id,
+        action: "reject",
+        csrfmiddlewaretoken: "{{ csrf_token }}"
+    }, function(){
+
+        $("#row-" + id + " td:nth-child(6)").html(
+            '<span class="badge bg-danger">Rejected</span>'
+        );
+
+        $("#row-" + id + " td:nth-child(7)").html("-");
+    });
+
+});
+
+
+</script>
+{% endblock %}

@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block styles %}
+<style>
+
+.attendance-wrapper {
+    max-height: 75vh;
+    overflow: auto;
+}
+
+/* Main header */
+thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+
+    background: linear-gradient(135deg, #212529, #343a40);
+    color: #fff !important;
+
+    border: 1px solid #495057;
+}
+
+thead th:hover {
+    background: #495057;
+    transition: 0.2s;
+}
+
+/* Day columns */
+.day-header {
+    background-color: #2c3034;
+}
+
+/* Weekend highlight */
+.weekend {
+    background-color: #3a3f44 !important;
+    color: #ffc107 !important;
+}
+
+.sunday-cell {
+    background-color: #f1f3f5 !important;
+    color: #6c757d !important;
+    cursor: not-allowed;
+}
+
+/* optional stronger */
+.sunday-cell .status-text {
+    font-weight: bold;
+}
+
+
+/* Sticky first column */
+.sticky-col {
+    position: sticky;
+    left: 0;
+    background: white;
+    color: #3a3f44 !important;
+    z-index: 5;
+}
+
+/* Day header */
+.day-header small {
+    font-size: 10px;
+}
+
+/* Cell colors */
+.present {
+    background-color: #d4edda !important;
+}
+
+.absent {
+    background-color: #f8d7da !important;
+}
+
+.leave {
+    background-color: #fff3cd !important;
+}
+
+.holiday {
+    background-color: #cce5ff !important;
+    /* border: 1px solid #007bff; */
+}
+
+/* Dropdown */
+.status-dropdown {
+    width: 100%;
+    height: 100%;
+    font-weight: bold;
+    text-align: center;
+    border: none;
+    outline: none;
+}
+
+.status-text {
+    display: block;
+    width: 100%;
+    height: 100%;
+    line-height: 45px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.attendance-cell {
+    min-width: 50px;
+    height: 45px;  
+    padding: 0;
+}
+
+.attendance-cell:hover {
+    background-color: #e9ecef;
+    transition: 0.2s;
+}
+
+.status-dropdown:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* STATUS COLORS */
+.present .status-text {
+    color: #155724;
+    font-weight: bold;
+}
+
+.absent .status-text {
+    color: #721c24;
+    font-weight: bold;
+}
+
+.leave .status-text {
+    color: #856404;
+    font-weight: bold;
+}
+
+.holiday .status-text {
+    color: #0c5460;
+    font-weight: bold;
+}
+
+/* Optional: color dropdown text also */
+.status-dropdown option[value="present"] { color: green; }
+.status-dropdown option[value="absent"] { color: red; }
+.status-dropdown option[value="leave"] { color: orange; }
+.status-dropdown option[value="holiday"] { color: teal; }
+
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="container-fluid mt-3">
+
+    <!-- HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold">
+            {{ project.display_name }} - Attendance Control
+        </h4>
+        
+        <a href="{% url 'project_dashboard' project.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-responsive attendance-wrapper">
+
+        <table class="table table-bordered attendance-table text-center">
+
+            <!-- HEADER -->
+            <thead>
+                <tr>
+                    <th class="sticky-col">  Users  </th>
+
+                    {% for d in days_header %}
+                        <th class="day-header {% if d.weekday == 'Sun' %}weekend{% endif %}">
+                            {{ d.day }}<br>
+                            <small>{{ d.weekday }}</small>
+                        </th>
+                    {% endfor %}
+
+                    
+                    <th> WD </th>
+                    <th> P </th>
+                    <th> % </th>
+                </tr>
+            </thead>
+
+            <!-- BODY -->
+            <tbody>
+                {% for row in data %}
+                <tr>
+
+                    <!-- USER -->
+                    <td class="sticky-col fw-bold">
+                        {{ row.user.username }}
+                    </td>
+
+                    <!-- DAYS -->
+                    {% for d in row.days %}
+                    <td class="attendance-cell
+                        {% if d.status == 'present' %}present
+                        {% elif d.status == 'absent' %}absent
+                        {% elif d.status == 'leave' %}leave
+                        {% elif d.status == 'holiday' %}holiday
+                        {% endif %}
+                        {% if d.is_sunday %}sunday-cell{% endif %}
+                    "
+                    data-user="{{ row.user.id }}"
+                    data-day="{{ d.day }}">
+
+                        <span class="status-text">
+                            {% if d.status == "present" %}P
+                            {% elif d.status == "absent" %}A
+                            {% elif d.status == "leave" %}L
+                            {% elif d.status == "holiday" %}H
+                            {% else %} {% endif %}
+                        </span>
+
+                        <select class="status-dropdown d-none" {% if d.status == "holiday" %}disabled{% endif %}>
+                            <option value=""> </option>
+                            <option value="present">P</option>
+                            <option value="absent">A</option>
+                            <option value="leave">L</option>
+                            <option value="holiday" {% if d.status == "holiday" %}selected{% endif %}>H</option>
+                        </select>
+
+                    </td>
+                    {% endfor %}
+                    
+                    <td class="text-dark fw-bold">
+                        {{ row.total_working_days }}
+                    </td>
+
+                    <td class="text-success fw-bold present-count">
+                        {{ row.total_present }}
+                    </td>
+
+                    <!-- PERCENTAGE -->
+                    <td class="fw-bold text-primary percentage-cell">
+                        {{ row.percentage }}%
+                    </td>
+
+                </tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+    
+    </div>
+    <div class="text-end mt-3">
+        <a href="{% url 'export_attendance_excel' project.id %}?month={{ month }}&year={{ year }}"
+                class="btn btn-success btn-sm">
+                <i class="bi bi-file-earmark-excel "></i> Export Excel
+        </a>
+    </div>
+
+</div>
+
+
+<!-- AJAX -->
+<script>
+function updateRowPercentage(row){
+
+    let present = 0;
+    let working = 0;
+
+    row.find(".attendance-cell").each(function(){
+
+        let cell = $(this);
+
+        if(cell.hasClass("holiday")|| cell.hasClass("sunday-cell")) return; // skip
+
+        working++;
+
+        if(cell.hasClass("present")){
+            present++;
+        }
+
+    });
+
+    let percent = 0;
+    if(working > 0){
+        percent = ((present / working) * 100).toFixed(1);
+    }
+
+    // ✅ Update UI
+    row.find(".present-count").text(present);
+    row.find(".percentage-cell").text(percent + "%");
+}
+
+$(".attendance-cell").click(function(){
+
+    let text = $(this).find(".status-text");
+    let dropdown = $(this).find(".status-dropdown");
+    
+    // console.log("Attendance Cell Clicked ! ",dropdown[0]);
+    text.hide();
+    dropdown.removeClass("d-none").focus();
+
+});
+
+
+$(".status-dropdown").click(function(e){
+    e.stopPropagation();
+});
+
+
+$(".attendance-cell").click(function(e){
+    e.stopPropagation();
+});
+
+$(document).click(function(){ 
+    $(".status-dropdown").addClass("d-none");
+    $(".status-text").show();
+});
+
+
+$(".status-dropdown").change(function(){
+
+    let cell = $(this).closest("td");
+
+    let user = cell.data("user");
+    let day = cell.data("day");
+    let text = cell.find(".status-text");
+    
+    let val = $(this).val();
+
+    // update UI text
+    let display = "-";
+    if(val === "present") display = "P";
+    if(val === "absent") display = "A";
+    if(val === "leave") display = "L";
+    if(val === "holiday") display = "H";
+
+    let dropdown = $(this);
+
+    // 🔥 LOADING EFFECT
+    cell.css("opacity", "0.5");
+
+    $.post("{% url 'update_attendance_admin' %}", {
+        user_id: user,
+        day: day,
+        month: "{{ month }}",
+        year: "{{ year }}",
+        project_id: "{{ project.id }}",
+        status: val,
+        csrfmiddlewaretoken: "{{ csrf_token }}"
+    })
+    .done(function(res){
+
+        if(!res.success){
+            alert(res.error);
+            return;
+        }
+
+        // ✅ UPDATE UI
+        text.text(display).show();
+        dropdown.addClass("d-none");
+
+        // ✅ UPDATE CELL COLOR
+        cell.removeClass("present absent leave holiday");
+
+        if(val === "present") cell.addClass("present");
+        else if(val === "absent") cell.addClass("absent");
+        else if(val === "leave") cell.addClass("leave");
+        else if(val === "holiday") cell.addClass("holiday");
+
+        updateRowPercentage(cell.closest("tr"));
+    })
+    .fail(function(){
+        alert("Error saving attendance!");
+    })
+    .always(function(){
+        cell.css("opacity", "1");
+    });
+
+    
+});
+</script>
+
+{% endblock %}

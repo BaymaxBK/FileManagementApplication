@@ -4,8 +4,20 @@ from django.contrib.auth.models import User,Group
 # Create your models here.
 class CustomTable(models.Model):
 
+    TABLE_TYPE_CHOICES = [
+        ('project', 'Project'),
+        ('general', 'General'),
+    ]
+    
     display_name = models.CharField(max_length=100)   # User-friendly name
     table_name = models.CharField(max_length=100, unique=True)  # Safe table name
+
+    table_type = models.CharField(
+        max_length=20,
+        choices=TABLE_TYPE_CHOICES,
+        default='general'
+    )
+
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -179,3 +191,82 @@ class DashboardGroupColumn(models.Model):
 
     class Meta:
         ordering = ["order"]
+
+
+class Attendance(models.Model):
+
+    STATUS_CHOICES = [
+        ("present", "Present"),
+        ("absent", "Absent"),
+        ("leave", "Leave"),
+    ]
+
+    project = models.ForeignKey(CustomTable, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    date = models.DateField()
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+
+    marked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="marked_attendance")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("project", "user", "date")  # 🔥 prevent duplicate
+
+    def __str__(self):
+        return f"{self.user} - {self.date} - {self.status}"
+    
+
+class AttendanceRequest(models.Model):
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    ATTENDANCE_CHOICES = [
+        ("present", "Present"),
+        ("absent", "Absent"),
+        ("leave", "Leave"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    project = models.ForeignKey(CustomTable, on_delete=models.CASCADE)
+
+    date = models.DateField()
+
+    requested_status = models.CharField(
+        max_length=10,
+        choices=ATTENDANCE_CHOICES
+    )
+
+    reason = models.TextField()
+
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default="pending"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "project", "date")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.date} ({self.status})"
+
+
+class Holiday(models.Model):
+    project = models.ForeignKey(CustomTable, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    date = models.DateField()
+
+    class Meta:
+        unique_together = ("project", "date")
+        
+    def __str__(self):
+        return f"{self.name} - {self.date}"

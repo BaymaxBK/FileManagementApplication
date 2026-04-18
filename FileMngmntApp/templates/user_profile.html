@@ -11,50 +11,13 @@
 
     
 {% block content%}
-    <div class="container mt-5">
+    <div class="container">
         <div class="card p-4 shadow d-flex justify-content-center align-items-center">
             <h2 class="mb-4">Welcome, {{ user.username }}!</h2>
             <p><strong>Email:</strong> {{ user.email }}</p>
-            <p><strong>Joined:</strong> {{ user.date_joined }}</p>
-
-            
-            
+            <p><strong>Joined:</strong> {{ user.date_joined }}</p>     
         </div>
         
-        <div class="row py-4" >            
-            <div class="col-md-4">
-                <div class="card border-success h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">All Tables</h5>
-                        <p class="card-text">Let user view the data in a custom table in the database.</p>
-                        <a href="{% url 'user_view_table' %}" class="btn btn-primary mt-3 w-30">Show Tables</a>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="card border-success h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">Team Task</h5>
-                        <p class="card-text">Let user Insert and Update the data into a admin created table</p>
-                        <a href="{% url 'choose_table' %}" class="btn btn-success mt-3 w-30">Show Tasks</a>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="card border-success h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">Assigned Task</h5>
-                        <p class="card-text">User see the All Assigned Tasks here .</p>
-                        <a href="{% url 'user_assigned_tasks' %}"  class="btn btn-dark mt-3 w-30">Show Tasks</a>
-                    </div>
-                </div>
-            </div>
-
-
-        </div>
-
     </div>
 {% endblock %}
 

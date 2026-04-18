@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}My File-App {% endblock %}</title>
+    <title>{% block title %}CDMS Application {% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token }}">
     
@@ -53,7 +53,7 @@
     <style>
 
         body {
-            padding-top: 60px;
+            overflow-x: hidden;
             background-color: #f9f9f9;
         }
         .flex-center {
@@ -62,62 +62,158 @@
             align-items: center;
         }
 
+        .sidebar {
+            width: 250px;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background-color: #212529;
+            padding-top: 20px;
+
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .sidebar a {
+            color: #ccc;
+            display: block;
+            padding: 12px;    
+            text-decoration: none;
+        }
+
+        .sidebar small {
+            font-size: 13px;
+            letter-spacing: 1px;
+        }
+
+        .sidebar a:hover {
+            background-color: #343a40;
+            color: #fff;
+        }
+
+        .content {
+            margin-left: 250px;
+            padding: 20px;
+        }
+
+        .sidebar-title {
+            color: #fff;
+            font-weight: bold;
+            display: block;
+            padding: 12px;
+            text-decoration: none; /* disables click + hover */
+        }
+
+        .sidebar-title h5 {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        /* Prevent hover override */
+        .sidebar-title:hover {
+            background-color: transparent !important;
+            color: #fff;
+        }
+
     </style>
+    
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                let cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    let cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        $.ajaxSetup({
+            headers: { "X-CSRFToken": getCookie("csrftoken") }
+        });
+    </script>
     
     {% block styles %} {% endblock %}
 </head>
 <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-        
-        <div class="container">
-            {% if user.is_authenticated %}
-                <a href={% if not user.is_staff and not user.is_superuser %} "{% url 'user_profile' %}" {% else %} "{% url 'admin_dashboard' %}" {% endif %} class="navbar-brand">📁 File Management</a>
-            {% endif %}
+
+     <!-- Sidebar -->
+    <div class="sidebar">
+        <div>
+            <a href="
+                {% if request.user.is_superuser %}
+                    {% url 'admin_dashboard' %}
+                {% elif request.user.is_staff %}
+                    {% url 'admin_dashboard' %}
+                {% else %}
+                    {% url 'user_dashboard' %}
+                {% endif %}
+                "
+                 class="text-white text-decoration-none sidebar-title">
+
+                <h5 class="text-center">
+
+                {% if request.user.is_superuser %}
+                    <i class="bi bi-shield-lock"></i> Admin Dashboard
+
+                {% elif request.user.is_staff %}
+                    <i class="bi bi-person-badge"></i> Staff Dashboard
+
+                {% else %}
+                    <i class="bi bi-person"></i> User Dashboard
+
+                {% endif %}
+
+                </h5>
+            </a>
             
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
+            <!-- ADMIN USER NAV  -->
+            {% if request.user.is_staff %}
+                {% include "partials/admin_sidebar.html" %}
+            {% endif %}
 
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    {% if user.is_authenticated %}
-                        
-                        <li class="nav-item ">
-                            <a class="nav-link text-light" href="#">👤 {{ user.username }}</a>
-                        </li>
-
-                        <li class="ms-2 nav-item">
-                            <form  method="post" action="{% url 'logout' %}">
-                                 {% csrf_token %}
-                                 <button type="submit" class="btn btn-danger">Logout</button>
-                            </form>
-                        </li>
-
-                    {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'login' %}">Login</a>
-                        </li>
-                        
-                    {% endif %}
-                </ul>
-            </div>
+            <!-- NORMAL USERS NAV -->
+            {% if user.is_authenticated and not user.is_staff and not user.is_superuser %}
+                {% include "partials/user_sidebar.html" %}
+            {% endif %}
         </div>
-    </nav>
 
-    <!-- Content Section -->
-    <div class="container mt-4">
+        {% if user.is_authenticated %}
+        <div class="p-3">
+                <form  method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="bi bi-box-arrow-right me-1"></i>Logout
+                    </button>
+                </form>
+        </div>
+        {% endif %}
+
+
+    </div>
+
+    
+    <!-- Main Content -->
+    <div class="content">
         {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            {% endfor %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
         {% endif %}
 
         {% block content %}
-            <!-- Child templates render here -->
+
+        
         {% endblock %}
     </div>
 

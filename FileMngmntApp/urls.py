@@ -10,7 +10,33 @@ urlpatterns = [
     # Authentication routes
     path('login/', views.custom_login, name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path("user-dashboard/", views.user_dashboard, name="user_dashboard"),
     
+    #PROJECT CREATION ROUTS
+    path("create-project/", views.create_project, name="create_project"),
+    path("projects-list/", views.project_list, name="project_list"),
+    path("project/<int:id>/edit/", views.edit_project, name="edit_project"),
+    path("project/<int:id>/delete/", views.delete_project, name="delete_project"),
+
+    # ATTENTENCE ROUTS
+    path("project/<int:project_id>/attendance/", views.attendance_page, name="attendance_page"),
+    path("project/<int:project_id>/mark_attendance/", views.mark_my_attendance, name="mark_my_attendance"),
+    path("user_project_list/", views.user_projects, name="user_projects"),
+    path("project/<int:project_id>/monthly/", views.monthly_attendance, name="monthly_attendance"),
+    path("project/<int:project_id>/", views.project_dashboard, name="project_dashboard"),
+    path("project/<int:project_id>/upload-holidays/", views.upload_holidays, name="upload_holidays"),
+    path("project/<int:project_id>/view-holidays/", views.view_holidays, name="view_holidays"),
+    path("delete-holiday/<int:holiday_id>/", views.delete_holiday, name="delete_holiday"),
+    path("project/<int:project_id>/request-attendance/",views.request_attendance,name="request_attendance"),
+    path("project/<int:project_id>/my-requests/",views.my_requests,name="my_requests"),
+    path("project/<int:project_id>/attendance-requests/", views.manage_requests, name="manage_requests"),
+    path("project/update-request/", views.update_request_status, name="update_request_status"),
+    path("project/approve-all_attendance-requests/", views.approve_all_requests, name="approve_all_requests"),
+    path("project/<int:project_id>/project_attendance_control/", views.project_attendance_control, name="project_attendance_control"),
+    path("project/update_attendance_admin/", views.update_attendance_admin, name="update_attendance_admin"),
+    path("project/<int:project_id>/export_attendance_excel/", views.export_attendance_excel, name="export_attendance_excel"),
+    
+  
     # ADMIN ROUTES
     path('admin_dashboard/',views.user_admin,name='admin_dashboard'),
     path('create_table/',views.create_custom_table,name='create_table'),
@@ -72,6 +98,8 @@ urlpatterns = [
     path("SPIR_Converter/", views.SPRI_tool_page, name="SPRI_tool_page"),
     path("spir_file_upload/", views.SPIR_file_upload_ajax, name="SPIR_file_upload_ajax"),
     path("spir_preview/", views.SPIR_selection_preview, name="SPIR_selection_preview"),
+
+    #ATTENDANCE
      
 ]
 

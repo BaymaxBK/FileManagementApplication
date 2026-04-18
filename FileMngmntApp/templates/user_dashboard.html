@@ -4,39 +4,38 @@
 
 <div class="container-fluid">
 
-    <!-- Page Title -->
+    <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold">Admin Dashboard</h3>
+        <h3 class="fw-bold">User Dashboard</h3>
         <span class="text-muted">Welcome, {{ request.user.username }}</span>
     </div>
 
     <!-- Summary Cards -->
     <div class="row g-3">
 
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body">
-                    <h6 class="text-muted">Total Tables</h6>
-                    <h3>{{ total_tables }}</h3>
+                    <h6 class="text-muted">My Tasks</h6>
+                    <h3>{{ my_tasks_count }}</h3>
                 </div>
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body">
-                    <h6 class="text-muted">Total Users</h6>
-                    <h3>{{ total_users }}</h3>
+                    <h6 class="text-muted">Pending Tasks</h6>
+                    <h3>{{ pending_tasks }}</h3>
                 </div>
             </div>
         </div>
 
-    
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body">
-                    <h6 class="text-muted">Projects</h6>
-                    <h3>{{ total_projects }}</h3>
+                    <h6 class="text-muted">Completed Tasks</h6>
+                    <h3>{{ completed_tasks }}</h3>
                 </div>
             </div>
         </div>

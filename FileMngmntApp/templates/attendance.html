@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h4>{{ project.display_name }} - Attendance</h4>
+
+<form method="POST">
+    {% csrf_token %}
+
+    <input type="date" name="date" value="{{ today }}" class="form-control mb-3" required>
+
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.username }}</td>
+                <td>
+                    <select name="status_{{ user.id }}" class="form-control">
+                        <option value="present">Present</option>
+                        <option value="absent">Absent</option>
+                        <option value="leave">Leave</option>
+                    </select>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-success">Save Attendance</button>
+</form>
+{% endblock %}

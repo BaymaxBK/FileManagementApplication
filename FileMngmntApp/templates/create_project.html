@@ -1,0 +1,225 @@
+
+{% extends "base.html" %}
+
+{% block styles%}
+<style>
+   select option:checked {
+    background-color: #0d6efd;
+    color: white;
+}
+</style>
+{% endblock %}
+
+
+
+{% block content %}
+<div class="container">
+
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h4>Create Project</h4>
+        </div>
+
+        <div class="card-body">
+
+            <form method="POST">
+                {% csrf_token %}
+
+                <!-- Project Name -->
+                <div class="mb-3">
+                    <label class="form-label">Project Name</label>
+                    {{ form.display_name }}
+                </div>
+
+                <!-- Users -->
+                
+                 <h5>Assign Users</h5>
+
+                    <div class="row">
+                    
+                        <!-- Available Users -->
+                        <div class="col-md-5">
+                            <label>Available Users</label>
+                            <select id="available_users" class="form-control" size="5" multiple>
+                                {% for user in users %}
+                                    {% if user.id != request.user.id %}
+                                    <option value="{{ user.id }}">{{ user.username }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                    
+                        <!-- Buttons -->
+                        <div class="col-md-2 text-center d-flex flex-column justify-content-center">
+                            <button type="button" id="add_user" class="btn btn-outline-primary btn-sm mb-2"><i class="bi bi-arrow-right-circle"></i></button>
+                            <button type="button" id="remove_user" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-left-circle"></i></button>
+                        </div>
+                    
+                        <!-- Selected Users -->
+                        <div class="col-md-5">
+                            <label>Selected Users</label>
+                            <select id="selected_users" name="visible_to_users" class="form-control" multiple size="5">
+                                <!-- ✅ Auto add creator -->
+                                <option value="{{ request.user.id }}" selected data-locked="true">
+                                    {{ request.user.username }} (Creator 🔒)
+                                </option>
+                            </select>
+                        </div>
+                    
+                    </div>
+
+                <!-- Groups -->
+            
+                <h5>Assign Groups</h5>
+                <div class="row mb-4">
+                
+                    <div class="col-md-5">
+                        <label>Available Groups</label>
+                        <select id="available_groups" class="form-control" multiple size="5">
+                            {% for group in groups %}
+                                <option value="{{ group.id }}">{{ group.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                
+                    <div class="col-md-2 text-center d-flex flex-column justify-content-center">
+                        <button type="button" id="add_group" class="btn btn-outline-primary btn-sm mb-2"><i class="bi bi-arrow-right-circle"></i></button>
+                        <button type="button" id="remove_group" class="btn btn btn-outline-danger btn-sm"><i class="bi bi-arrow-left-circle"></i></button>
+                    </div>
+                
+                    <div class="col-md-5">
+                        <label>Selected Groups</label>
+                        <select id="selected_groups" name="visible_to_groups" class="form-control" multiple size="5"></select>
+                    </div>
+                
+                </div>
+
+                <!-- Editors -->
+            
+                <h5>Users Can Edit</h5>
+                <div class="row mb-4">
+                
+                    <div class="col-md-5">
+                        <label>Available Users</label>
+                        <select id="available_edit_users" class="form-control" multiple size="5">
+                            {% for user in users %}
+                                {% if user.id != request.user.id %}
+                                    <option value="{{ user.id }}">{{ user.username }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                
+                    <div class="col-md-2 text-center d-flex flex-column justify-content-center">
+                        <button type="button" id="add_edit_user" class="btn btn-outline-primary btn-sm mb-2"><i class="bi bi-arrow-right-circle"></i></button>
+                        <button type="button" id="remove_edit_user" class="btn btn-outline-danger btn-sm"><i class="bi bi-arrow-left-circle"></i></button>
+                    </div>
+                
+                    <div class="col-md-5">
+                        <label>Selected Editors</label>
+                        <select id="selected_edit_users" name="users_can_edit" class="form-control" multiple size="5">
+                            <option value="{{ request.user.id }}" selected data-locked="true">
+                                    {{ request.user.username }} (Creator 🔒)
+                            </option>
+                        </select>
+                    </div>
+                
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">
+                    Save Project
+                </button>
+
+            </form>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+
+// $("#available_users option, #available_groups option, #available_edit_users option").click(function (e) {
+//     e.preventDefault();
+//     $(this).toggleClass("active");
+
+//     if ($(this).hasClass("active")) {
+//         $(this).prop("selected", true);
+//     } else {
+//         $(this).prop("selected", false);
+//     }
+// });
+
+$("select[multiple] option").on("mousedown", function (e) {
+    e.preventDefault(); // stop default selection
+
+    let $option = $(this);
+
+    // toggle selection manually
+    $option.prop("selected", !$option.prop("selected"));
+
+    return false;
+});
+
+// ---------- ADD SELETED ITEM TO THE SELECTED ITEM LIST -----------
+// USERS
+$("#add_user").click(function () {
+    $("#available_users option:selected").appendTo("#selected_users");
+});
+$("#remove_user").click(function () {
+    
+    $("#selected_users option:selected").each(function(){
+
+        // ❌ Prevent creator removal
+        if ($(this).data("locked")) {
+            alert("Project creator cannot be removed!");
+            return;
+        }
+
+        $(this).appendTo("#available_users");
+
+    });
+});
+
+// GROUPS
+$("#add_group").click(function () {
+    $("#available_groups option:selected").appendTo("#selected_groups");
+});
+$("#remove_group").click(function () {
+    $("#selected_groups option:selected").appendTo("#available_groups");
+});
+
+// EDIT USERS
+$("#add_edit_user").click(function () {
+    $("#available_edit_users option:selected").appendTo("#selected_edit_users");
+});
+$("#remove_edit_user").click(function () {
+    
+    $("#selected_edit_users option:selected").each(function(){
+
+        // ❌ Prevent creator removal
+        if ($(this).data("locked")) {
+            alert("Project creator cannot be removed!");
+            return;
+        }
+
+        $(this).appendTo("#available_edit_users");
+
+    });
+});
+
+// IMPORTANT: Select all before submit
+$("form").submit(function () {
+    $("#selected_users option").prop("selected", true);
+    $("#selected_groups option").prop("selected", true);
+    $("#selected_edit_users option").prop("selected", true);
+});
+
+
+
+</script>
+
+{% endblock %}

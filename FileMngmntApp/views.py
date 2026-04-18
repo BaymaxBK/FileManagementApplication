@@ -7,37 +7,65 @@ from django.contrib import messages
 from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User,Group
 from django.db import connection,models,transaction
 from django.http import HttpResponseForbidden
+from django.urls import reverse
+from django.contrib.auth.decorators import login_required
+from .forms import CustomTableForm
 from FileMngmntApp.models import CustomTable,customFields,CustomTaskTable,\
-CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn,CompositeUniqueConstraint,TableSchemaChange
+CustomTaskFields,AssignedTaskRows,Dashboard,DashboardGroupColumn,CompositeUniqueConstraint,\
+TableSchemaChange,Attendance,Holiday,AttendanceRequest
 import traceback
 import uuid
 import numbers
 import re
 import os
+import calendar
+from django.contrib.admin.views.decorators import staff_member_required
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse,HttpResponse
 import json
 from datetime import datetime
 from math import ceil
-import openpyxl
 from io import BytesIO
 from django.core.files.storage import FileSystemStorage
 import tempfile
 from openpyxl import load_workbook,Workbook
+from openpyxl.styles import PatternFill, Font, Alignment,Border, Side
+from openpyxl.utils import get_column_letter
 import pandas as pd
 from django.conf import settings
 
 
-# ---------- SPIR CONVERTION TOOL ------------
+# ---------- SPIR CONVERTION TOOL ----------
     # METHODS:
     #  -- SPRI_tool_page
     #  -- SPIR_file_upload_ajax
     #  -- SPIR_selection_preview
     #  -- SPIR_duplicate_emptyheader_validation
 
+# ---------- PROJECT CREATION ---------------
+    # METHODS:
+    #  -- create_project
+    #  -- project_list
+    #  -- edit_project
+    #  -- delete_project
+
+# ---------- PROJECT ATTENDENCE -------------
+    # METHODS:
+    #  -- project_dashboard
+    #  -- attendance_page
+    #  -- mark_my_attendance
+    #  -- user_projects
+    #  -- monthly_attendance
+    #  -- upload_holidays
+    #  -- view_holidays
+    #  -- request_attendance
+    #  -- my_requests
+    #  -- manage_requests
+    #  -- update_attendance_admin
+    #  -- 
 
 def home(request):
     return render(request,'home.html')
@@ -70,7 +98,7 @@ def custom_login(request):
                 return redirect('admin_dashboard')
             
             else:
-                return redirect('user_profile')
+                return redirect('user_dashboard')
             
         else:
             messages.error(request, 'Invalid credentials')
@@ -78,10 +106,29 @@ def custom_login(request):
     return render(request, 'login.html')
 
 
+def user_dashboard(request):
+
+    user = request.user
+
+    my_tasks = CustomTaskTable.objects.filter(assigned_to=user)
+
+    context = {
+        "my_tasks_count": my_tasks.count(),
+        "pending_tasks": my_tasks.filter(status="pending").count(),
+        "completed_tasks": my_tasks.filter(status="completed").count(),
+    }
+
+    return render(request, "user_dashboard.html", context)
+
 @login_required
 @user_passes_test(is_userAdmin)
 def user_admin(request):
-    return render(request,'admin_dashboard.html')
+    context = {
+        "total_tables": CustomTable.objects.filter(table_type="general").count(),
+        "total_users": User.objects.count(),
+        "total_projects": CustomTable.objects.filter(table_type="project").count()
+    }
+    return render(request,'admin_dashboard.html',context)
 
 
 @login_required
@@ -89,10 +136,899 @@ def upload_file(request):
     return render(request, 'upload.html')
 
 
+# PROJECT CREATION 
+@login_required
+def create_project(request):
+    
+    users = User.objects.all()
+    groups = Group.objects.all()
+    if not is_userAdmin(request.user):
+        return render(request,'admin_dashboard.html',{"message": "Access Denied"})
+        # return render(request, "dashboar.html", )
+
+    if request.method == "POST":
+        form = CustomTableForm(request.POST)
+        
+        print("Valid Form ",form.is_valid())
+        if form.is_valid():
+
+            project = form.save(commit=False)
+            project.created_by = request.user
+            project.table_type = "project"
+
+            base_name = sanitize_name(project.display_name)
+
+            # Ensure uniqueness
+            counter = 1
+            table_name = base_name
+
+            while CustomTable.objects.filter(table_name=table_name).exists():
+                table_name = f"{base_name}_{counter}"
+                counter += 1
+
+            project.table_name = table_name
+            print("Project name db: ",table_name)
+            project.save()
+
+            form.save_m2m()  # save many-to-many
+            
+            print("Redirected Project List ")
+            return redirect("project_list")  # create this URL
+    else:
+        
+        form = CustomTableForm()
+
+    return render(request, "create_project.html", {"form": form,"users":users,"groups":groups})
+
+@login_required
+def project_list(request):
+    if is_userAdmin(request.user):
+        projects =  CustomTable.objects.filter(
+                        visible_to_users=request.user,
+                        table_type="project"
+                    ).prefetch_related(
+                        "visible_to_users",
+                        "users_can_edit"
+                    ).select_related("created_by")
+        
+        return render(request, "project_list.html",{"projects":projects})
+    return render(request,'admin_dashboard.html')
+
+
+def edit_project(request, id):
+    project = get_object_or_404(CustomTable, id=id)
+
+    users = User.objects.all()
+    groups = Group.objects.all()
+
+    if request.method == "POST":
+        project.display_name = request.POST.get("display_name")
+
+        selected_users = request.POST.getlist("visible_to_users")
+        selected_groups = request.POST.getlist("visible_to_groups")
+        edit_users = request.POST.getlist("users_can_edit")
+
+        selected_users_ids = set(map(int, selected_users)) if selected_users else set()
+        selected_groups_ids = set(map(int, selected_groups)) if selected_groups else set()
+        edit_users_ids = set(map(int, edit_users)) if edit_users else set()
+
+        creator_id = project.created_by.id
+        selected_users_ids.add(creator_id)
+        edit_users_ids.add(creator_id)
+
+        project.save()
+
+        project.visible_to_users.set(selected_users)
+        project.visible_to_groups.set(selected_groups)
+        project.users_can_edit.set(edit_users)
+
+        return redirect("project_list")
+
+    return render(request, "edit_project.html", {
+        "project": project,
+        "users": users,
+        "groups": groups,
+    })
+
+@require_POST
+def delete_project(request, id):
+    project = get_object_or_404(CustomTable, id=id)
+
+    # Optional: permission check
+    if request.user != project.created_by and not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Permission denied"})
+
+    project.delete()
+
+    return JsonResponse({"status": "success"})
+
+
+# PROJECT ATTENDENCE
+@login_required
+def user_projects(request):
+
+    projects = CustomTable.objects.filter(
+        visible_to_users=request.user,
+        table_type="project"
+    )
+
+    today = date.today()
+    is_sunday = today.weekday() == 6
+
+
+    # attach attendance status
+    for project in projects:
+        record = Attendance.objects.filter(
+            project=project,
+            user=request.user,
+            date=today
+        ).first()
+
+        project.is_holiday = Holiday.objects.filter(
+            project=project,
+            date=today
+        ).exists()
+
+        project.attendance_status = record.status if record else None
+
+    return render(request, "user_projects.html", {
+        "projects": projects,
+        "is_sunday":is_sunday        
+    })
+
+def attendance_page(request, project_id):
+    project = get_object_or_404(CustomTable, id=project_id)
+    users = project.visible_to_users.all()
+
+    if request.method == "POST":
+        selected_date = request.POST.get("date")
+
+        for user in users:
+            status = request.POST.get(f"status_{user.id}")
+
+            Attendance.objects.update_or_create(
+                project=project,
+                user=user,
+                date=selected_date,
+                defaults={
+                    "status": status,
+                    "marked_by": request.user
+                }
+            )
+
+        return redirect("attendance_page", project_id=project.id)
+
+    return render(request, "attendance.html", {
+        "project": project,
+        "users": users
+    })
+
+def mark_my_attendance(request, project_id):
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    # 🔐 Permission check
+    if request.user not in project.visible_to_users.all():
+        return HttpResponse("Not allowed")
+
+    if is_userAdmin(request.user):
+        back_url = "project_dashboard"
+    else:
+        back_url = "user_projects"
+        
+    today = date.today()
+    is_sunday = today.weekday() == 6
+    if is_sunday :
+        messages.error(request, "Cannot mark attendance on Sunday")
+        return redirect("monthly_attendance", project_id=project.id)
+
+    is_holiday = Holiday.objects.filter(
+        project=project,
+        date=today
+    ).exists()
+    
+    if is_holiday:
+        messages.warning(request, "Cannot mark attendance on Holiday")
+        return redirect("monthly_attendance", project_id=project.id)
+
+    # check already marked
+    existing = Attendance.objects.filter(
+        project=project,
+        user=request.user,
+        date=today
+    ).first()
+
+    if request.method == "POST":
+        status = request.POST.get("status")
+
+        Attendance.objects.update_or_create(
+            project=project,
+            user=request.user,
+            date=today,
+            defaults={
+                "status": status,
+                "marked_by": request.user
+            }
+        )
+        
+        if is_userAdmin(request.user):
+            return redirect("project_dashboard", project_id=project.id)
+        
+        return redirect("user_projects")
+
+    return render(request, "mark_attendance_user.html", {
+        "project": project,
+        "today": today,
+        "existing": existing,
+        "back_url": back_url,
+        "is_sunday": is_sunday,
+        "is_holiday": is_holiday
+    })
+
+
+@login_required
+def my_requests(request, project_id):
+
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    requests = AttendanceRequest.objects.filter(
+        user=request.user,
+        project=project
+    ).order_by("-created_at")
+
+    return render(request, "my_attendance_requests.html", {
+        "project": project,
+        "requests": requests
+    })
+
+def request_attendance(request, project_id):
+
+    project = get_object_or_404(CustomTable, id=project_id)
+    user = request.user
+    selected_date = request.GET.get("date")
+
+    if request.method == "POST":
+
+        req_date = request.POST.get("date")
+        req_status = request.POST.get("status")
+        reason = request.POST.get("reason")
+
+        # 🔥 Validation
+        if not req_date or not req_status or not reason:
+            messages.error(request, "All fields are required")
+            return redirect(request.path)
+
+        req_date = date.fromisoformat(req_date)
+
+        # ❌ Prevent future date
+        if req_date > date.today():
+            messages.error(request, "Future date not allowed")
+            return redirect(request.path)
+
+        # ❌ Prevent duplicate request
+        if AttendanceRequest.objects.filter(
+            user=user,
+            project=project,
+            date=req_date
+        ).exists():
+            messages.warning(request, "Request already submitted for this date")
+            return redirect(request.path)
+
+        # ✅ Save request
+        AttendanceRequest.objects.create(
+            user=user,
+            project=project,
+            date=req_date,
+            requested_status=req_status,
+            reason=reason
+        )
+
+        messages.success(request, "Request submitted successfully")
+
+        return redirect("monthly_attendance", project_id=project.id)
+
+    return render(request, "request_attendance.html", {
+        "selected_date": selected_date,
+        "project": project,
+        "today": date.today()
+    })
+
+@staff_member_required
+def manage_requests(request,project_id):
+    
+    project=AttendanceRequest.objects.filter(project_id=project_id)
+    
+    requests = project.select_related(
+        "user", "project"
+    ).order_by("-created_at")
+
+    return render(request, "manage_requests.html", {
+        "requests": requests,"project_id":project_id
+    })
+
+@staff_member_required
+@require_POST
+def update_attendance_admin(request):
+
+    try:
+        user_id = request.POST.get("user_id")
+        day = int(request.POST.get("day"))
+        month = int(request.POST.get("month"))
+        year = int(request.POST.get("year"))
+        project_id = request.POST.get("project_id")
+        status = request.POST.get("status")
+
+        valid_status = ["present", "absent", "leave"]
+
+        if status not in valid_status:
+            return JsonResponse({
+                "success": False,
+                "error": "Given status is Invalid "
+            })
+        
+        # 🔍 Build date
+        today = date.today()
+        attendance_date = date(year, month, day)
+
+        if attendance_date.weekday() == 6:
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot mark attendance on Sunday"
+            })
+        
+        if attendance_date > today:
+            print("Future Attendance Not Permited !")
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot mark attendance for future"
+            })
+
+        # 🚫 Prevent marking holiday manually (optional safety)
+        is_holiday = Holiday.objects.filter(
+            project_id=project_id,
+            date=attendance_date
+        ).exists()
+
+        if is_holiday:
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot modify holiday"
+            })
+
+        # ✅ Create or update attendance
+        obj, created = Attendance.objects.update_or_create(
+            user_id=user_id,
+            project_id=project_id,
+            date=attendance_date,
+            defaults={"status": status}
+        )
+
+        return JsonResponse({
+            "success": True,
+            "status": status,
+            "created": created
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+def export_attendance_excel(request, project_id):
+
+    project = CustomTable.objects.get(id=project_id)
+
+    year = int(request.GET.get("year"))
+    month = int(request.GET.get("month"))
+
+    users = project.visible_to_users.all()
+
+    total_days = calendar.monthrange(year, month)[1]
+
+    # Holiday map
+    holidays = Holiday.objects.filter(
+        project=project,
+        date__year=year,
+        date__month=month
+    )
+    holiday_map = {h.date.day: h.name for h in holidays}
+
+    # Prepare data
+    rows = []
+
+    for user in users:
+
+        attendance = Attendance.objects.filter(
+            user=user,
+            project=project,
+            date__year=year,
+            date__month=month
+        )
+
+        attendance_map = {a.date.day: a.status for a in attendance}
+
+        row = {
+            "User": user.username
+        }
+
+        present = 0
+        working_days = 0
+
+        for day in range(1, total_days + 1):
+
+            current_date = date(year, month, day)
+            weekday = calendar.day_name[current_date.weekday()][:3]
+            is_sunday = current_date.weekday() == 6
+
+            status = attendance_map.get(day)
+
+            if day in holiday_map:
+                display = "H"
+            elif is_sunday:
+                display = "S" 
+            else:
+                display = {
+                    "present": "P",
+                    "absent": "A",
+                    "leave": "L"
+                }.get(status, "")
+
+                working_days += 1
+                if status == "present":
+                    present += 1
+
+            row[f"{day}-{weekday}"] = display
+
+        # totals
+        percentage = round((present / working_days) * 100, 1) if working_days else 0
+
+        row["Present"] = present
+        row["Working Days"] = working_days
+        row["%"] = percentage
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    # Response
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="attendance.xlsx"'
+
+    # WRITE WITH STYLING
+    with pd.ExcelWriter(response, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name="Attendance")
+
+        ws = writer.sheets["Attendance"]
+    
+        # 🎨 COLORS
+        fill_present = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        fill_absent = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        fill_leave = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+        fill_holiday = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
+        fill_sunday = PatternFill(start_color="E7E6E6", fill_type="solid")
+
+        bold_font = Font(bold=True)
+        thin = Side(style='thin')
+
+        # Header styling
+        for col in ws[1]:
+            col.font = bold_font
+            col.border = Border(top=thin, bottom=thin ,left=thin,right=thin)
+
+
+        # Apply cell colors
+        for row in ws.iter_rows(min_row=2, min_col=2):
+            for cell in row:
+                if cell.value == "P":
+                    cell.fill = fill_present
+                elif cell.value == "A":
+                    cell.fill = fill_absent
+                elif cell.value == "L":
+                    cell.fill = fill_leave
+                elif cell.value == "H":
+                    cell.fill = fill_holiday
+                elif cell.value == "S":
+                    cell.fill = fill_sunday
+                    cell.value =""
+                cell.border = Border(top=thin, bottom=thin ,left=thin,right=thin)
+
+        # Auto column width
+        for col in ws.columns:
+            max_length = 0
+            col_letter = get_column_letter(col[0].column)
+
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+
+            ws.column_dimensions[col_letter].width = max_length + 2
+        
+        header_fill = PatternFill(start_color="212529", end_color="212529", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        user_fill = PatternFill(start_color="F8F9FA", fill_type="solid")
+
+        for row in ws.iter_rows(min_row=2, max_col=1):
+            for cell in row:
+                cell.fill = user_fill
+                cell.font = Font(bold=True)
+        
+        ws.freeze_panes = "B3"
+         # Total columns count
+        total_cols = ws.max_column
+
+        # -- TITLE ROW INSERTION AND COLORING --
+        ws.insert_rows(1)
+
+        # Merge across all columns
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+
+        # Set title
+        month_name = calendar.month_name[month]
+        title = f"{project.display_name} - {month_name} {year} Attendance Report"
+
+        cell = ws.cell(row=1, column=1)
+        cell.value = title
+        cell.fill = PatternFill(start_color="D9E1F2", fill_type="solid")
+
+        # Style title
+        cell.font = Font(size=16, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(top=thin, bottom=thin ,left=thin,right=thin)
+
+        ws.row_dimensions[1].height = 30   # Title row
+        ws.row_dimensions[2].height = 20   # Header row
+
+        return response
+    
+
+@staff_member_required
+@require_POST
+def approve_all_requests(request):
+
+    pending_requests = AttendanceRequest.objects.filter(status="pending")
+
+    for req in pending_requests:
+
+        # update request
+        req.status = "approved"
+        req.save()
+
+        # 🔥 update attendance
+        Attendance.objects.update_or_create(
+            user=req.user,
+            project=req.project,
+            date=req.date,
+            defaults={"status": req.requested_status}
+        )
+
+    return JsonResponse({"status": "success"})
+
+
+@staff_member_required
+def project_attendance_control(request, project_id):
+
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    users = project.visible_to_users.all()
+
+    year = int(request.GET.get("year", date.today().year))
+    month = int(request.GET.get("month", date.today().month))
+
+    
+    # Fetch all attendance at once (OPTIMIZED)
+    attendance_qs = Attendance.objects.filter(
+        project=project,
+        date__year=year,
+        date__month=month
+    ).select_related("user")
+
+    # Fetch holidays once
+    holiday_qs = Holiday.objects.filter(
+        project=project,
+        date__year=year,
+        date__month=month
+    )
+
+    attendance_map = {}
+    for a in attendance_qs:
+        attendance_map.setdefault(a.user_id, {})[a.date.day] = a.status
+
+    holiday_map = {h.date.day: h.name for h in holiday_qs}
+
+
+    total_days = calendar.monthrange(year, month)[1]
+
+    # Prepare header (date + weekday)
+    days_header = []
+    for day in range(1, total_days + 1):
+        current_date = date(year, month, day)
+        days_header.append({
+            "day": day,
+            "weekday": current_date.strftime("%a")  # Mon, Tue...
+        })
+
+    data = []
+    for user in users:
+
+        user_attendance = attendance_map.get(user.id, {})
+        
+        user_days = []
+        present_count = 0
+        working_days = 0
+
+        for day in range(1, total_days + 1):
+
+            status = user_attendance.get(day)
+            holiday_name = holiday_map.get(day)
+
+            #  Final status logic
+            if holiday_name:
+                final_status = "holiday"
+            else:
+                final_status = status
+
+            current_date = date(year, month, day)
+            # Count only working days
+            if final_status not in ["holiday"] and current_date.weekday() != 6:
+                working_days += 1
+
+                if final_status == "present":
+                    present_count += 1
+
+            user_days.append({
+                "day": day,
+                "status": final_status,
+                "holiday_name": holiday_name,
+                "is_sunday": current_date.weekday() == 6
+            })
+
+        percentage = round((present_count / working_days) * 100, 1) if working_days else 0
+
+        data.append({
+            "user": user,
+            "days": user_days,
+            "percentage": percentage,
+            "total_present": present_count,
+            "total_working_days": working_days
+        })
+
+    return render(request, "project_attendance_control.html", {
+        "project": project,
+        "data": data,
+        "days_header": days_header,
+        "month": month,
+        "year": year
+    })
+
+
+@staff_member_required
+def update_request_status(request):
+
+    if request.method == "POST":
+
+        req_id = request.POST.get("id")
+        action = request.POST.get("action")
+
+        req = AttendanceRequest.objects.get(id=req_id)
+
+        if action == "approve":
+            req.status = "approved"
+
+            # 🔥 UPDATE ATTENDANCE
+            Attendance.objects.update_or_create(
+                user=req.user,
+                project=req.project,
+                date=req.date,
+                defaults={"status": req.requested_status}
+            )
+
+        elif action == "reject":
+            req.status = "rejected"
+
+        req.save()
+
+        return JsonResponse({"status": "success"})
+
+
+def monthly_attendance(request, project_id):
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    user = request.user
+
+    # get month/year
+    today = date.today()
+    month = int(request.GET.get("month", today.month))
+    year = int(request.GET.get("year", today.year))
+
+    # total days in month
+    total_days = calendar.monthrange(year, month)[1]
+    first_weekday = calendar.monthrange(year, month)[0]  # 0=Mon
+
+    # fetch attendance records
+    records = Attendance.objects.filter(
+        project=project,
+        user=user,
+        date__year=year,
+        date__month=month
+    )
+    attendance_map = {r.date.day: r.status for r in records}
+
+    requests_qs = AttendanceRequest.objects.filter(
+        user=request.user,
+        project=project,
+        date__year=year,
+        date__month=month
+    )
+
+    request_map = {
+        req.date.day: req.status
+        for req in requests_qs
+    }
+
+
+    # Holidays
+    holidays = Holiday.objects.filter(
+        project=project,
+        date__year=year,
+        date__month=month
+    )
+
+    holiday_map = {h.date.day: h.name for h in holidays}
+
+    # build full month data
+    days_data = []
+    present = absent = leave = 0
+
+    for day in range(1, total_days + 1):
+
+        current_date = date(year, month, day)
+        weekday = current_date.weekday()
+
+        status = attendance_map.get(day)
+        holiday_name = holiday_map.get(day)
+        request_status = request_map.get(day)
+
+        if holiday_name:
+            final_status = "holiday"
+        elif weekday == 6:
+            final_status = "sunday"
+        elif status:
+            final_status = status
+        else:
+            final_status = None
+
+        if final_status == "present":
+            present += 1
+        elif final_status == "absent":
+            absent += 1
+        elif final_status == "leave":
+            leave += 1
+
+        days_data.append({
+            "day": day,
+            "full_date": date(year, month, day),
+            "status": final_status,
+            "holiday_name": holiday_name,
+            "request_status": request_status
+        })
+    
+    if is_userAdmin(request.user):
+        back_url = reverse("project_dashboard", args=[project.id])
+    else:
+        back_url = reverse("user_projects")
+
+    return render(request, "monthly_attendance.html", {
+        "project": project,
+        "days_data": days_data,
+        "first_weekday": first_weekday,
+        "month": month,
+        "year": year,
+        "present": present,
+        "absent": absent,
+        "leave": leave,
+        "back_url":back_url
+    })
+
+
+def upload_holidays(request, project_id):
+
+    project = CustomTable.objects.get(id=project_id)
+
+    if request.method == "POST" and request.FILES.get("file"):
+
+        file = request.FILES["file"]
+
+        try:
+            df = pd.read_excel(file)
+
+            # normalize columns
+            df.columns = df.columns.str.strip().str.lower()
+
+            if "name" not in df.columns or "date" not in df.columns:
+                
+                messages.warning(request, "Excel must contain 'name' and 'date' columns")
+                return redirect(request.path)
+
+            created_count = 0
+
+            for _, row in df.iterrows():
+
+                name = str(row["name"]).strip()
+                raw_date = pd.to_datetime(row["date"], dayfirst=True, errors="coerce")
+
+                if pd.isna(raw_date):
+                    continue  # skip invalid row
+                
+                date = raw_date.date()
+
+                print("Parsed Date : ",date)
+                obj, created = Holiday.objects.update_or_create(
+                    project=project,
+                    date=date,
+                    defaults={"name": name}
+                )
+
+                if created:
+                    created_count += 1
+
+            messages.success(request, f"{created_count} holidays uploaded successfully")
+
+        except Exception as e:
+            messages.error(request, f"Error: {str(e)}")
+
+        return redirect(request.path)
+
+    return render(request, "upload_holidays.html", {
+        "project": project
+    })
+
+
+def project_dashboard(request, project_id):
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    return render(request, "project_dashboard.html", {
+        "project": project
+    })
+
+def view_holidays(request, project_id):
+    project = get_object_or_404(CustomTable, id=project_id)
+
+    holidays = Holiday.objects.filter(project=project).order_by("date")
+
+    return render(request, "view_holidays.html", {
+        "project": project,
+        "holidays": holidays
+    })
+
+@require_POST
+def delete_holiday(request, holiday_id):
+    try:
+        holiday = Holiday.objects.get(id=holiday_id)
+        holiday.delete()
+        return JsonResponse({"status": "success"})
+    
+    except Holiday.DoesNotExist:
+        return JsonResponse({"status": "error"})
+
+
 @login_required
 @user_passes_test(is_normal_user)
 def user_profile(request):
-    return render(request, 'user_profile.html')
+    projects = CustomTable.objects.filter(
+        visible_to_users=request.user
+    )
+    return render(request, 'user_profile.html',{"projects": projects})
 
 
 # ADMIN VIEW'S
@@ -1022,7 +1958,7 @@ def delete_composite_unique(request):
 def view_staff_created_models(request):
 
     staff_users = User.objects.filter(is_staff=True, is_superuser=False)
-    tables = CustomTable.objects.prefetch_related('fields').filter(created_by__in=staff_users)
+    tables = CustomTable.objects.prefetch_related('fields').filter(created_by__in=staff_users,table_type="general")
 
     return render(request, 'view_tables.html', {'tables': tables})
 
